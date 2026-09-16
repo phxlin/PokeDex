@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- pokedex.db mixes disposable cache with real team data; see data_extraction_rules.xml. -->
+</full-backup-content>

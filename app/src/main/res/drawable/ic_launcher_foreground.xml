@@ -1,0 +1,38 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Ball base (lower half is off-white) -->
+    <path
+        android:fillColor="#F5F5F5"
+        android:pathData="M54,24 a30,30 0 1,0 0,60 a30,30 0 1,0 0,-60 z" />
+
+    <!-- Red top dome (sweep-flag 1 = upper semicircle) -->
+    <path
+        android:fillColor="#EE1515"
+        android:pathData="M24,54 a30,30 0 0,1 60,0 z" />
+
+    <!-- Centre horizontal band -->
+    <path
+        android:fillColor="#1A1A1A"
+        android:pathData="M24.6,49 L83.4,49 L83.4,59 L24.6,59 Z" />
+
+    <!-- Button: outer ring -->
+    <path
+        android:fillColor="#1A1A1A"
+        android:pathData="M54,43 a11,11 0 1,0 0,22 a11,11 0 1,0 0,-22 z" />
+
+    <!-- Button: inner -->
+    <path
+        android:fillColor="#F5F5F5"
+        android:pathData="M54,48 a6,6 0 1,0 0,12 a6,6 0 1,0 0,-12 z" />
+
+    <!-- Outline to clean the silhouette -->
+    <path
+        android:strokeColor="#1A1A1A"
+        android:strokeWidth="3"
+        android:fillColor="#00000000"
+        android:pathData="M54,24 a30,30 0 1,0 0,60 a30,30 0 1,0 0,-60 z" />
+</vector>

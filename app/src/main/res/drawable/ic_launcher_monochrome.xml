@@ -1,0 +1,26 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Outer ring -->
+    <path
+        android:strokeColor="#000000"
+        android:strokeWidth="6"
+        android:fillColor="#00000000"
+        android:pathData="M54,25 a29,29 0 1,0 0,58 a29,29 0 1,0 0,-58 z" />
+
+    <!-- Band -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M26,50 L82,50 L82,58 L26,58 Z" />
+
+    <!-- Button -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M54,44 a10,10 0 1,0 0,20 a10,10 0 1,0 0,-20 z" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M54,49 a5,5 0 1,0 0,10 a5,5 0 1,0 0,-10 z" />
+</vector>

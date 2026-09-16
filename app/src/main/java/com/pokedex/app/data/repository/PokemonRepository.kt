@@ -1,0 +1,59 @@
+package com.pokedex.app.data.repository
+
+import com.pokedex.app.core.Resource
+import com.pokedex.app.domain.model.AbilityDetail
+import com.pokedex.app.domain.model.EvolutionChain
+import com.pokedex.app.domain.model.FormsBundle
+import com.pokedex.app.domain.model.PokemonDetail
+import com.pokedex.app.domain.model.PokemonSpecies
+import com.pokedex.app.domain.model.PokemonSummary
+import com.pokedex.app.domain.team.ItemInfo
+import com.pokedex.app.domain.team.MoveInfo
+import com.pokedex.app.domain.team.TypeChart
+import kotlinx.coroutines.flow.Flow
+
+/** Bundle the detail screen needs up front. */
+data class PokemonDetailBundle(
+    val detail: PokemonDetail,
+    val species: PokemonSpecies,
+)
+
+interface PokemonRepository {
+
+    /** National Dex index for the home grid. Cache-first, refreshes if stale. */
+    fun observePokemonIndex(): Flow<Resource<List<PokemonSummary>>>
+
+    /** Force a network refresh of the index (retry button). */
+    suspend fun refreshIndex(): Result<Unit>
+
+    /** Detail + species for one Pokémon. Emits cached data instantly, then refreshes. */
+    fun observePokemonDetail(idOrName: String): Flow<Resource<PokemonDetailBundle>>
+
+    suspend fun getEvolutionChain(chainId: Int): Result<EvolutionChain>
+
+    /**
+     * Base form + every notable alternate variety of a species, each with full detail
+     * so the detail screen can show one tab per form. `null` when the species has none.
+     */
+    suspend fun getFormsBundle(speciesId: Int): Result<FormsBundle?>
+
+    suspend fun getAbility(name: String): Result<AbilityDetail>
+
+    /** National Dex ids of every Pokémon that has [type]. Cached; used by the type filter. */
+    suspend fun pokemonIdsOfType(type: String): Result<Set<Int>>
+
+    /** Resolve a (possibly messy) name to a National Dex id — used by camera identify. */
+    suspend fun resolvePokemonId(rawName: String): Result<Int>
+
+    /** Single-shot cache-first fetch of one Pokémon's full detail (team builder). */
+    suspend fun getPokemon(idOrName: String): Result<PokemonDetail>
+
+    /** Move type / category / power, cached. */
+    suspend fun getMoveInfo(name: String): Result<MoveInfo>
+
+    /** Held-item effect text, cached. */
+    suspend fun getItemInfo(name: String): Result<ItemInfo>
+
+    /** The full 18-type effectiveness chart, cached. */
+    suspend fun getTypeChart(): Result<TypeChart>
+}

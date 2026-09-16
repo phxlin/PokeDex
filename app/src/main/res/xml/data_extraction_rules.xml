@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <!--
+      pokedex.db holds both disposable cache (pokemon_index, raw_cache, meta) and
+      real user data (team, team_member) in one Room database — there's no way to
+      back up just the teams without excluding the whole file. Backing up the
+      cache too is harmless (it's TTL-validated on next read); losing saved teams
+      on restore is not. See "Known limitations" in README.md for splitting the
+      cache into its own database.
+    -->
+    <cloud-backup />
+    <device-transfer />
+</data-extraction-rules>

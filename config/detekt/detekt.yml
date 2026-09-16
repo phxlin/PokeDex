@@ -1,0 +1,46 @@
+# Detekt overrides on top of the bundled default config (buildUponDefaultConfig = true).
+# Anything not listed keeps detekt's default. The goal is to catch real bugs and
+# creeping complexity without fighting the existing Compose style.
+
+build:
+  maxIssues: 0
+
+complexity:
+  LongMethod:
+    # Compose screen composables are legitimately long; watch the rest.
+    threshold: 90
+  LongParameterList:
+    functionThreshold: 8
+    constructorThreshold: 12
+    ignoreDefaultParameters: true
+  TooManyFunctions:
+    thresholdInFiles: 20
+    thresholdInClasses: 20
+    thresholdInObjects: 25
+    ignorePrivate: true
+  CyclomaticComplexMethod:
+    threshold: 20
+  NestedBlockDepth:
+    threshold: 5
+
+style:
+  MagicNumber:
+    # Too noisy for UI code full of dp / color / weight literals.
+    active: false
+  ReturnCount:
+    max: 5
+  MaxLineLength:
+    maxLineLength: 140
+  UnusedPrivateMember:
+    active: true
+
+naming:
+  FunctionNaming:
+    # @Composable functions are PascalCase by convention.
+    ignoreAnnotated: ['Composable']
+
+exceptions:
+  TooGenericExceptionCaught:
+    active: false
+  SwallowedException:
+    active: false
