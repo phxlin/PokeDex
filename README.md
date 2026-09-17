@@ -11,6 +11,7 @@ as tappable:
 
 | Pokédex | Detail | Teams | Identify |
 |---|---|---|---|
+| ![Pokédex grid](docs/screenshots/pokedex.png) | ![Detail screen](docs/screenshots/detail.png) | ![Team builder](docs/screenshots/teams.png) | ![Identify screen](docs/screenshots/identify.png) |
 | Scrollable grid of every Pokémon with instant name/number search, type/generation filters and sort | Artwork, sprites, lore, stats, abilities, evolutions, swipeable form tabs, cry playback | Six-slot team builder: legal-species/item gating, Stat Points, Stat Alignments, swipeable forms & Mega Evolution, per-Pokémon defensive/offensive type-coverage analysis | Live camera or gallery → classified → jumps to the match |
 
 ## Requirements
