@@ -41,6 +41,26 @@ class PokemonRepositoryImplTest {
     )
 
     @Test
+    fun `legacy cache without learn methods is refreshed before choosing Champions moves`() = runTest {
+        val legacy = """{"id":763,"name":"tsareena","moves":[{"move":{"name":"trop-kick"}},{"move":{"name":"magical-leaf"}}]}"""
+        coEvery { cacheDao.get("pokemon/tsareena") } returns com.pokedex.app.data.local.RawCacheEntity(
+            "pokemon/tsareena", legacy, System.currentTimeMillis(),
+        )
+        val freshBody = """
+            {"id":763,"name":"tsareena","moves":[
+                {"move":{"name":"trop-kick"},"version_group_details":[{"move_learn_method":{"name":"train"}}]},
+                {"move":{"name":"magical-leaf"},"version_group_details":[{"move_learn_method":{"name":"level-up"}}]}
+            ]}
+        """.trimIndent()
+        val fresh = json.decodeFromString(PokemonDto.serializer(), freshBody)
+        coEvery { service.getPokemon("tsareena") } returns fresh
+
+        val detail = repo().getPokemon("tsareena").getOrThrow()
+
+        assertThat(detail.movePool).containsExactly("trop-kick")
+    }
+
+    @Test
     fun `refreshIndex filters alternate forms, sorts, and records sync time`() = runTest {
         coEvery { service.getPokemonList(any(), any()) } returns PokemonListResponseDto(
             count = 3,

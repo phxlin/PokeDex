@@ -143,9 +143,16 @@ pure Kotlin under `domain/team/`:
 
 * **`ChampionsLegal`** — the legal-species allow-list and the 166-item legal
   list. Illegal Pokémon and items are shown greyed with a 🚫 marker rather than
-  hidden. Moves are **not** gated: Champions restores moves from every past
-  generation (Zap Cannon on Raichu, …), so the full cross-generation `movePool`
-  PokéAPI returns for a Pokémon is selectable.
+  hidden. Moves are **not** gated by us: Champions restores moves from every
+  past generation (Zap Cannon on Raichu, …), and PokéAPI has its own
+  authoritative `train` move-learn-method (added for Champions v1.0, mined
+  from the game's own files) that already encodes exactly that — including
+  moves a species knows in older games but that are disabled in Champions
+  (Tsareena knows Magical Leaf, but it's unusable there). `Mappers.movePoolFor`
+  prefers `train`-tagged moves when PokéAPI has populated them for a species,
+  falling back to the older "every move from any game" union — patched for
+  specific known PokéAPI gaps via `MOVE_POOL_PATCHES` (e.g. Golisopod's
+  U-turn and Aqua Jet) — for species PokéAPI hasn't reached yet.
 * **`CompetitiveItems`** — held-item catalogue (staples, choice, berries, ~80
   Mega Stones incl. Champions-only ones). Carries an `apiSlug` for items PokéAPI
   names differently (Leek → `stick`) and a bundled `blurb` for the many Gen

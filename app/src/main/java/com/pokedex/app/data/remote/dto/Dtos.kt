@@ -39,6 +39,12 @@ data class PokemonDto(
 @Serializable
 data class MoveSlotDto(
     val move: NamedApiResourceDto = NamedApiResourceDto(),
+    @SerialName("version_group_details") val versionGroupDetails: List<MoveVersionGroupDetailDto> = emptyList(),
+)
+
+@Serializable
+data class MoveVersionGroupDetailDto(
+    @SerialName("move_learn_method") val moveLearnMethod: NamedApiResourceDto = NamedApiResourceDto(),
 )
 
 @Serializable

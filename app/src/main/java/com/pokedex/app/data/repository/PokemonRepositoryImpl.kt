@@ -351,8 +351,12 @@ class PokemonRepositoryImpl @Inject constructor(
         return now() - last > ttlMs
     }
 
-    private fun pokemonKey(id: Int) = "pokemon/$id"
-    private fun pokemonKey(name: String) = "pokemon/${name.lowercase()}"
+    // v2: cache bumped when version_group_details/move_learn_method were added to
+    // MoveSlotDto — a v1 entry decodes to an empty list for that field (it was never
+    // serialized in the first place), which would silently fall back to the pre-Champions
+    // blended movePool instead of refreshing to get the real train-method data.
+    private fun pokemonKey(id: Int) = "pokemon/v2/$id"
+    private fun pokemonKey(name: String) = "pokemon/v2/${name.lowercase()}"
     private fun speciesKey(id: Int) = "species/$id"
 
     companion object {

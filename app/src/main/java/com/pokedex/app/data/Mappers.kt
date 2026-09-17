@@ -8,6 +8,7 @@ import com.pokedex.app.data.remote.dto.AbilityDto
 import com.pokedex.app.data.remote.dto.ChainLinkDto
 import com.pokedex.app.data.remote.dto.EvolutionChainDto
 import com.pokedex.app.data.remote.dto.EvolutionDetailDto
+import com.pokedex.app.data.remote.dto.MoveSlotDto
 import com.pokedex.app.data.remote.dto.PokemonDto
 import com.pokedex.app.data.remote.dto.SpeciesDto
 import com.pokedex.app.domain.model.AbilityDetail
@@ -21,6 +22,18 @@ import com.pokedex.app.domain.model.PokemonSpecies
 import com.pokedex.app.domain.model.PokemonSprites
 import com.pokedex.app.domain.model.PokemonStat
 import com.pokedex.app.domain.model.PokemonType
+
+/**
+ * Patches for species where the "every move from any game" fallback (see
+ * [movePoolFor]) is missing an otherwise well-documented move — Golisopod's U-turn
+ * and Aqua Jet are both listed on Bulbapedia but missing from its PokéAPI entry.
+ * Only applied in that fallback: once a species has PokéAPI's `train` data, that
+ * data is authoritative and a patch must not reintroduce a move `train` omits
+ * because it's actually disabled in Champions.
+ */
+private val MOVE_POOL_PATCHES: Map<String, List<String>> = mapOf(
+    "golisopod" to listOf("u-turn", "aqua-jet"),
+)
 
 private val STAT_LABELS = mapOf(
     "hp" to "HP",
@@ -73,8 +86,30 @@ fun PokemonDto.toDomain(): PokemonDetail {
         ),
         cry = PokemonCry(latest = cries?.latest, legacy = cries?.legacy),
         speciesId = species.idFromUrl() ?: id,
-        movePool = moves.mapNotNull { it.move.name.takeIf { n -> n.isNotBlank() } }.distinct().sorted(),
+        movePool = movePoolFor(moves, name),
     )
+}
+
+/**
+ * PokéAPI's `train` move-learn-method (added for Pokémon Champions v1.0, sourced from
+ * mined Champions game files) is the authoritative per-species Champions moveset — it
+ * already excludes moves a species knows in older games but that are disabled in
+ * Champions (Tsareena knows Magical Leaf, but it's unusable there). Prefer it when
+ * PokéAPI has populated it for this species; a species it hasn't reached yet (Golisopod,
+ * as of this writing) falls back to the older "every move from any game" union, patched
+ * for known gaps via [MOVE_POOL_PATCHES].
+ */
+private fun movePoolFor(moves: List<MoveSlotDto>, slug: String): List<String> {
+    val trainMoves = moves
+        .filter { slot -> slot.versionGroupDetails.any { it.moveLearnMethod.name == "train" } }
+        .mapNotNull { it.move.name.takeIf { n -> n.isNotBlank() } }
+    if (trainMoves.isNotEmpty()) return trainMoves.distinct().sorted()
+
+    // No train data for this species yet — MOVE_POOL_PATCHES only applies here, never
+    // on top of train data: a patch is sourced from a species' general-game learnset,
+    // which says nothing about whether that move is actually enabled in Champions.
+    val fallback = moves.mapNotNull { it.move.name.takeIf { n -> n.isNotBlank() } }
+    return (fallback + MOVE_POOL_PATCHES[slug].orEmpty()).distinct().sorted()
 }
 
 fun SpeciesDto.toDomain(): PokemonSpecies {
