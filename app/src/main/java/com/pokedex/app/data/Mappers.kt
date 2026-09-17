@@ -35,6 +35,16 @@ private val MOVE_POOL_PATCHES: Map<String, List<String>> = mapOf(
     "golisopod" to listOf("u-turn", "aqua-jet"),
 )
 
+/**
+ * Species slugs whose [MOVE_POOL_PATCHES] entry includes [moveSlug] — e.g. Golisopod for
+ * "u-turn". PokéAPI's own move→Pokémon reverse index (`learned_by_pokemon`, used to seed
+ * move-search candidates) doesn't know about these patches, since Golisopod is missing from
+ * that index for these exact moves — the same gap the patch exists to work around. Search
+ * needs this to find Golisopod the same way the species' own move picker already does.
+ */
+fun speciesPatchedFor(moveSlug: String): Set<String> =
+    MOVE_POOL_PATCHES.filterValues { moveSlug in it }.keys
+
 private val STAT_LABELS = mapOf(
     "hp" to "HP",
     "attack" to "Atk",

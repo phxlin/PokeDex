@@ -11,7 +11,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -19,8 +21,18 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/** Normalizes free-text move search input to a PokéAPI move slug, e.g. "U-Turn " -> "u-turn". */
+private fun moveSlug(raw: String) = raw.trim().lowercase().replace(' ', '-')
+
+/** What the single search field in [PokemonPickerSheet] matches against. */
+enum class PickerSearchMode(val label: String, val placeholder: String) {
+    NAME("Name", "Search name or №"),
+    MOVE("Move", "e.g. Flamethrower"),
+}
+
 data class PickerControls(
-    val query: String = "",
+    val searchMode: PickerSearchMode = PickerSearchMode.NAME,
+    val searchText: String = "",
     val sort: SortOption = SortOption.DEX_ASC,
     val types: Set<String> = emptySet(),
     val generations: Set<Int> = emptySet(),
@@ -28,6 +40,7 @@ data class PickerControls(
     val activeFilterCount: Int get() = types.size + generations.size
 }
 
+@OptIn(kotlinx.coroutines.FlowPreview::class)
 @HiltViewModel
 class PokemonPickerViewModel @Inject constructor(
     private val repository: PokemonRepository,
@@ -40,6 +53,17 @@ class PokemonPickerViewModel @Inject constructor(
     private val typeIds = MutableStateFlow<Map<String, Set<Int>>>(emptyMap())
     private val typeLoading = MutableStateFlow(false)
     val isFiltering: StateFlow<Boolean> = typeLoading.asStateFlow()
+
+    /** Resolved id-sets per searched move slug, filled lazily (and debounced) while in [PickerSearchMode.MOVE]. */
+    private val moveIds = MutableStateFlow<Map<String, Set<Int>>>(emptyMap())
+    private val moveLoading = MutableStateFlow(false)
+    val isFilteringByMove: StateFlow<Boolean> = moveLoading.asStateFlow()
+
+    /** Set when the last move search failed (e.g. offline) rather than genuinely finding
+     * nothing — a failed lookup is never cached in [moveIds], so it stays distinguishable
+     * from a real zero-result search. Cleared as soon as a new search starts. */
+    private val moveError = MutableStateFlow(false)
+    val hasMoveError: StateFlow<Boolean> = moveError.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -55,10 +79,41 @@ class PokemonPickerViewModel @Inject constructor(
                 typeLoading.value = false
             }
         }
+        viewModelScope.launch {
+            controls
+                .map { if (it.searchMode == PickerSearchMode.MOVE) moveSlug(it.searchText) else "" }
+                .distinctUntilChanged()
+                .debounce(400)
+                // collectLatest, not collect: verifying a popular move can mean 200+ candidate
+                // fetches, and switching to a different move (or back to Name mode) mid-search
+                // should cancel that work rather than block behind it.
+                .collectLatest { slug ->
+                    // Both flags belong to whichever search is currently running — cancelling
+                    // one (a new slug arriving, or leaving Move mode) must not leave them
+                    // stuck from the search that got cancelled, so this early return resets
+                    // them same as a completed search would.
+                    if (slug.isBlank() || slug in moveIds.value) {
+                        moveLoading.value = false
+                        moveError.value = false
+                        return@collectLatest
+                    }
+                    moveError.value = false
+                    try {
+                        moveLoading.value = true
+                        repository.pokemonIdsOfMove(slug)
+                            .onSuccess { ids -> moveIds.update { it + (slug to ids) } }
+                            .onFailure { moveError.value = true }
+                    } finally {
+                        // Runs on cancellation too (e.g. collectLatest cancelling this block
+                        // for a newer query), so "Checking…" can't get stuck showing forever.
+                        moveLoading.value = false
+                    }
+                }
+        }
     }
 
     val results: StateFlow<List<PokemonSummary>> =
-        combine(repository.observePokemonIndex(), controls, typeIds) { resource, ctrl, typeMap ->
+        combine(repository.observePokemonIndex(), controls, typeIds, moveIds) { resource, ctrl, typeMap, moveMap ->
             val all = resource.data ?: emptyList()
             var seq = all.asSequence()
 
@@ -74,15 +129,27 @@ class PokemonPickerViewModel @Inject constructor(
                     seq = seq.filter { it.id in union }
                 }
             }
-            val t = ctrl.query.trim().lowercase()
-            if (t.isNotEmpty()) {
-                val digits = t.trimStart('#', '0')
-                val asNumber = digits.toIntOrNull()
-                seq = seq.filter { p ->
-                    p.name.contains(t) ||
-                        p.displayName.lowercase().contains(t) ||
-                        p.id.toString() == digits ||
-                        (asNumber != null && p.id == asNumber)
+            when (ctrl.searchMode) {
+                PickerSearchMode.NAME -> {
+                    val t = ctrl.searchText.trim().lowercase()
+                    if (t.isNotEmpty()) {
+                        val digits = t.trimStart('#', '0')
+                        val asNumber = digits.toIntOrNull()
+                        seq = seq.filter { p ->
+                            p.name.contains(t) ||
+                                p.displayName.lowercase().contains(t) ||
+                                p.id.toString() == digits ||
+                                (asNumber != null && p.id == asNumber)
+                        }
+                    }
+                }
+                PickerSearchMode.MOVE -> {
+                    val slug = moveSlug(ctrl.searchText)
+                    if (slug.isNotEmpty()) {
+                        // Not yet resolved (still debouncing/loading) -> show nothing rather
+                        // than a stale unfiltered list that would suddenly narrow once it lands.
+                        seq = seq.filter { it.id in (moveMap[slug] ?: emptySet()) }
+                    }
                 }
             }
             when (ctrl.sort) {
@@ -93,7 +160,12 @@ class PokemonPickerViewModel @Inject constructor(
             }.toList()
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun onQueryChange(v: String) = controls.update { it.copy(query = v) }
+    fun onSearchTextChange(v: String) = controls.update { it.copy(searchText = v) }
+
+    /** Switching modes clears the text — a half-typed name and a move slug aren't interchangeable. */
+    fun setSearchMode(mode: PickerSearchMode) = controls.update {
+        if (it.searchMode == mode) it else it.copy(searchMode = mode, searchText = "")
+    }
     fun setSort(sort: SortOption) = controls.update { it.copy(sort = sort) }
     fun toggleType(type: String) = controls.update {
         it.copy(types = if (type in it.types) it.types - type else it.types + type)

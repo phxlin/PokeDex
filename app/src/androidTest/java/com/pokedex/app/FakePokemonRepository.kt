@@ -46,6 +46,9 @@ class FakePokemonRepository(
     override suspend fun pokemonIdsOfType(type: String): Result<Set<Int>> =
         Result.success(index.map { it.id }.toSet())
 
+    override suspend fun pokemonIdsOfMove(move: String): Result<Set<Int>> =
+        Result.success(emptySet())
+
     override suspend fun resolvePokemonId(rawName: String): Result<Int> =
         index.firstOrNull { it.name == rawName }?.id?.let { Result.success(it) }
             ?: Result.failure(IllegalStateException("not found"))

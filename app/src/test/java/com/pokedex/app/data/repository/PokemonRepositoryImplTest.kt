@@ -6,6 +6,9 @@ import com.pokedex.app.data.local.PokemonIndexDao
 import com.pokedex.app.data.local.PokemonIndexEntity
 import com.pokedex.app.data.local.RawCacheDao
 import com.pokedex.app.data.remote.PokeApiService
+import com.pokedex.app.data.remote.dto.MoveDto
+import com.pokedex.app.data.remote.dto.MoveSlotDto
+import com.pokedex.app.data.remote.dto.MoveVersionGroupDetailDto
 import com.pokedex.app.data.remote.dto.NamedApiResourceDto
 import com.pokedex.app.data.remote.dto.PokemonDto
 import com.pokedex.app.data.remote.dto.PokemonListResponseDto
@@ -41,6 +44,31 @@ class PokemonRepositoryImplTest {
     )
 
     @Test
+    fun `move search includes patched learners missing from the reverse index`() = runTest {
+        coEvery { service.getMove("aqua-jet") } returns MoveDto(
+            name = "aqua-jet", learnedByPokemon = emptyList(),
+        )
+        coEvery { service.getPokemon(any()) } returns PokemonDto(id = 768, name = "golisopod")
+
+        val ids = repo().pokemonIdsOfMove("aqua-jet").getOrThrow()
+
+        assertThat(ids).contains(768)
+    }
+
+    @Test
+    fun `failed candidate verification must not become a successful empty result`() = runTest {
+        coEvery { service.getMove("magical-leaf") } returns MoveDto(
+            name = "magical-leaf",
+            learnedByPokemon = listOf(NamedApiResourceDto("bulbasaur", "https://pokeapi.co/api/v2/pokemon/1/")),
+        )
+        coEvery { service.getPokemon("1") } throws java.io.IOException("offline")
+
+        val result = repo().pokemonIdsOfMove("magical-leaf")
+
+        assertThat(result.isFailure).isTrue()
+    }
+
+    @Test
     fun `legacy cache without learn methods is refreshed before choosing Champions moves`() = runTest {
         val legacy = """{"id":763,"name":"tsareena","moves":[{"move":{"name":"trop-kick"}},{"move":{"name":"magical-leaf"}}]}"""
         coEvery { cacheDao.get("pokemon/tsareena") } returns com.pokedex.app.data.local.RawCacheEntity(
@@ -58,6 +86,45 @@ class PokemonRepositoryImplTest {
         val detail = repo().getPokemon("tsareena").getOrThrow()
 
         assertThat(detail.movePool).containsExactly("trop-kick")
+    }
+
+    @Test
+    fun `pokemonIdsOfMove only returns species where the move is Champions-legal`() = runTest {
+        // PokeAPI's move endpoint says both bulbasaur and tsareena can learn magical-leaf,
+        // but that reverse index has no per-species learn-method breakdown. Bulbasaur has
+        // no train data (falls back to the blended list, which does include the move), while
+        // tsareena's train data — the same Tsareena/Magical Leaf case from earlier — omits it
+        // because it's disabled in Champions. Only bulbasaur should come back.
+        coEvery { service.getMove("magical-leaf") } returns MoveDto(
+            name = "magical-leaf",
+            learnedByPokemon = listOf(
+                NamedApiResourceDto("bulbasaur", "https://pokeapi.co/api/v2/pokemon/1/"),
+                NamedApiResourceDto("tsareena", "https://pokeapi.co/api/v2/pokemon/763/"),
+            ),
+        )
+        coEvery { service.getPokemon("1") } returns PokemonDto(
+            id = 1,
+            name = "bulbasaur",
+            moves = listOf(MoveSlotDto(NamedApiResourceDto("magical-leaf"))),
+        )
+        coEvery { service.getPokemon("763") } returns PokemonDto(
+            id = 763,
+            name = "tsareena",
+            moves = listOf(
+                MoveSlotDto(
+                    NamedApiResourceDto("trop-kick"),
+                    listOf(MoveVersionGroupDetailDto(NamedApiResourceDto("train"))),
+                ),
+                MoveSlotDto(
+                    NamedApiResourceDto("magical-leaf"),
+                    listOf(MoveVersionGroupDetailDto(NamedApiResourceDto("level-up"))),
+                ),
+            ),
+        )
+
+        val ids = repo().pokemonIdsOfMove("magical-leaf").getOrThrow()
+
+        assertThat(ids).containsExactly(1)
     }
 
     @Test

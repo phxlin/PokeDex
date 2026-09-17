@@ -217,6 +217,7 @@ data class MoveDto(
     @SerialName("effect_entries") val effectEntries: List<VerboseEffectDto> = emptyList(),
     @SerialName("effect_chance") val effectChance: Int? = null,
     @SerialName("flavor_text_entries") val flavorTextEntries: List<FlavorTextEntryDto> = emptyList(),
+    @SerialName("learned_by_pokemon") val learnedByPokemon: List<NamedApiResourceDto> = emptyList(),
 )
 
 // ---- item/{id} -------------------------------------------------------------

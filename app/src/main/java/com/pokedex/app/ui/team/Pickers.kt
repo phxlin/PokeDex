@@ -5,6 +5,7 @@
 
 package com.pokedex.app.ui.team
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -24,9 +25,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -105,13 +108,19 @@ private fun PickerSheet(
 }
 
 @Composable
-private fun SheetSearchField(value: String, onChange: (String) -> Unit, placeholder: String) {
+private fun SheetSearchField(
+    value: String,
+    onChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier.padding(horizontal = 16.dp),
+) {
     TextField(
         value = value,
         onValueChange = onChange,
         placeholder = { Text(placeholder, color = SheetDim) },
+        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = SheetDim) },
         singleLine = true,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = TextFieldDefaults.colors(
             focusedContainerColor = SheetField,
@@ -180,7 +189,7 @@ private fun SheetFilters(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).animateContentSize()) {
         Row(
             Modifier.fillMaxWidth().padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -214,9 +223,19 @@ private fun SheetFilters(
             }
         }
         if (expanded) {
-            Column(Modifier.padding(top = 4.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                content()
+            // Capped + independently scrollable: without this, a filter section with many
+            // groups (Generation + Type + …) can grow tall enough to push the results list
+            // — and even the count text right below this — off the bottom of the sheet with
+            // no way to reach them, since the sheet's outer content isn't itself scrollable.
+            Surface(color = SheetField, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    Modifier.heightIn(max = 260.dp).verticalScroll(rememberScrollState()).padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    content()
+                }
             }
+            Spacer(Modifier.size(4.dp))
         }
     }
 }
@@ -265,6 +284,19 @@ private fun BrowseExistingRow(onClick: () -> Unit) {
     HorizontalDivider()
 }
 
+/** Mutually-exclusive "Name" / "Move" toggle for [PokemonPickerSheet]'s single search field. */
+@Composable
+private fun SearchModeToggle(mode: PickerSearchMode, onSelect: (PickerSearchMode) -> Unit) {
+    Row(
+        Modifier.padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        PickerSearchMode.entries.forEach { m ->
+            SheetChip(m.label, m == mode) { onSelect(m) }
+        }
+    }
+}
+
 @Composable
 fun PokemonPickerSheet(
     onDismiss: () -> Unit,
@@ -275,14 +307,26 @@ fun PokemonPickerSheet(
     val results by viewModel.results.collectAsStateWithLifecycle()
     val controls by viewModel.currentControls.collectAsStateWithLifecycle()
     val filtering by viewModel.isFiltering.collectAsStateWithLifecycle()
+    val filteringByMove by viewModel.isFilteringByMove.collectAsStateWithLifecycle()
+    val hasMoveError by viewModel.hasMoveError.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
-    LaunchedEffect(controls.sort, controls.types, controls.generations, controls.query) {
+    LaunchedEffect(controls.sort, controls.types, controls.generations, controls.searchMode, controls.searchText) {
         listState.scrollToItem(0)
     }
 
     PickerSheet("Choose a Pokémon", onDismiss) {
         onBrowseExisting?.let { BrowseExistingRow(it) }
-        SheetSearchField(controls.query, viewModel::onQueryChange, "Search name or №")
+        SearchModeToggle(controls.searchMode, viewModel::setSearchMode)
+        Spacer(Modifier.size(8.dp))
+        SheetSearchField(controls.searchText, viewModel::onSearchTextChange, controls.searchMode.placeholder)
+        if (controls.searchMode == PickerSearchMode.MOVE) {
+            Text(
+                "Only Pokémon that can actually learn it under ${ChampionsLegal.REGULATION}.",
+                style = MaterialTheme.typography.labelSmall,
+                color = SheetDim,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp),
+            )
+        }
         Spacer(Modifier.size(10.dp))
         SheetSortRow(POKEMON_SORTS, controls.sort, viewModel::setSort)
         Spacer(Modifier.size(6.dp))
@@ -302,9 +346,14 @@ fun PokemonPickerSheet(
         }
         Spacer(Modifier.size(4.dp))
         Text(
-            if (filtering) "Loading type filter…" else "${results.size} Pokémon",
+            when {
+                filtering -> "Loading type filter…"
+                filteringByMove -> "Checking which Pokémon can learn that move…"
+                hasMoveError -> "Couldn't check that move — check your connection and try again."
+                else -> "${results.size} Pokémon"
+            },
             style = MaterialTheme.typography.labelSmall,
-            color = SheetDim,
+            color = if (hasMoveError && !filteringByMove) MaterialTheme.colorScheme.error else SheetDim,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
         )
         Text(
@@ -317,36 +366,34 @@ fun PokemonPickerSheet(
         HorizontalDivider()
         LazyColumn(state = listState, modifier = Modifier.heightIn(max = 420.dp)) {
             items(results, key = { it.id }) { p ->
-                val legal = ChampionsLegal.isLegalSpecies(p.name)
-                Surface(
-                    onClick = { if (legal) { onPick(p.id, p.name); onDismiss() } },
-                    color = Color.Transparent,
-                ) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        AsyncImage(
-                            model = p.spriteUrl,
-                            contentDescription = null,
-                            alpha = if (legal) 1f else 0.4f,
-                            modifier = Modifier.size(40.dp),
-                        )
-                        Spacer(Modifier.size(12.dp))
-                        Text(
-                            p.displayName,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = if (legal) SheetInk else SheetDim,
-                        )
-                        if (!legal) {
-                            Spacer(Modifier.size(6.dp))
-                            Text("🚫", style = MaterialTheme.typography.labelMedium)
-                        }
-                        Spacer(Modifier.weight(1f))
-                        Text(p.dexLabel, style = MaterialTheme.typography.labelMedium, color = SheetDim)
-                    }
-                }
+                PokemonResultRow(p, onClick = { onPick(p.id, p.name); onDismiss() })
             }
+        }
+    }
+}
+
+@Composable
+private fun PokemonResultRow(p: PokemonSummary, onClick: () -> Unit) {
+    val legal = ChampionsLegal.isLegalSpecies(p.name)
+    Surface(onClick = { if (legal) onClick() }, color = Color.Transparent) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AsyncImage(
+                model = p.spriteUrl,
+                contentDescription = null,
+                alpha = if (legal) 1f else 0.4f,
+                modifier = Modifier.size(40.dp),
+            )
+            Spacer(Modifier.size(12.dp))
+            Text(p.displayName, style = MaterialTheme.typography.bodyLarge, color = if (legal) SheetInk else SheetDim)
+            if (!legal) {
+                Spacer(Modifier.size(6.dp))
+                Text("🚫", style = MaterialTheme.typography.labelMedium)
+            }
+            Spacer(Modifier.weight(1f))
+            Text(p.dexLabel, style = MaterialTheme.typography.labelMedium, color = SheetDim)
         }
     }
 }

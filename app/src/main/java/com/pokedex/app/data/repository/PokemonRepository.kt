@@ -42,6 +42,14 @@ interface PokemonRepository {
     /** National Dex ids of every Pokémon that has [type]. Cached; used by the type filter. */
     suspend fun pokemonIdsOfType(type: String): Result<Set<Int>>
 
+    /**
+     * National Dex ids of every Pokémon that can actually learn [move] under Champions —
+     * i.e. it shows up in that Pokémon's own Champions-accurate movePool (see
+     * [PokemonDetail.movePool] / `Mappers.movePoolFor`), not just PokéAPI's raw "any game,
+     * any method" move→Pokémon index. Cached; used by the team builder's move filter.
+     */
+    suspend fun pokemonIdsOfMove(move: String): Result<Set<Int>>
+
     /** Resolve a (possibly messy) name to a National Dex id — used by camera identify. */
     suspend fun resolvePokemonId(rawName: String): Result<Int>
 

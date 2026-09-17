@@ -18,6 +18,7 @@ import com.pokedex.app.data.remote.dto.PokemonDto
 import com.pokedex.app.data.remote.dto.SpeciesDto
 import com.pokedex.app.data.remote.dto.TypeDto
 import com.pokedex.app.core.PokemonForms
+import com.pokedex.app.data.speciesPatchedFor
 import com.pokedex.app.data.toDomain
 import com.pokedex.app.domain.model.AbilityDetail
 import com.pokedex.app.domain.model.EvolutionChain
@@ -29,9 +30,14 @@ import com.pokedex.app.domain.team.ItemInfo
 import com.pokedex.app.domain.team.MoveInfo
 import com.pokedex.app.domain.team.TypeChart
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
@@ -178,16 +184,7 @@ class PokemonRepositoryImpl @Inject constructor(
     override suspend fun getMoveInfo(name: String): Result<MoveInfo> = withContext(io) {
         runCatching {
             val slug = name.lowercase().trim()
-            // v3: cache bumped when flavor_text_entries were added to MoveDto — PokéAPI
-            // leaves effect_entries empty for many of the newest moves (Upper Hand, Dire
-            // Claw, …) even though it has a perfectly good flavor-text description, so
-            // that's the fallback below, same as getItemInfo already does.
-            val key = "move/v3/$slug"
-            val dto = cacheDao.get(key)?.body
-                ?.let { runCatching { json.decodeFromString(MoveDto.serializer(), it) }.getOrNull() }
-                ?: service.getMove(slug).also {
-                    cacheDao.put(RawCacheEntity(key, json.encodeToString(MoveDto.serializer(), it), now()))
-                }
+            val dto = fetchMoveCached(slug)
             val short = dto.effectEntries.firstOrNull { it.language.name == "en" }
                 ?.shortEffect
                 ?.replace("\$effect_chance%", dto.effectChance?.let { "$it%" } ?: "a chance")
@@ -282,6 +279,54 @@ class PokemonRepositoryImpl @Inject constructor(
         }.mapCatchingCancellation()
     }
 
+    override suspend fun pokemonIdsOfMove(move: String): Result<Set<Int>> = withContext(io) {
+        runCatching {
+            val slug = move.lowercase().trim()
+            val candidateIds = fetchMoveCached(slug).learnedByPokemon
+                .mapNotNull { it.idFromUrl() }
+                .filter { it in 1..10000 }
+                .map { it.toString() }
+            // A species can be missing from PokéAPI's reverse index for exactly the move a
+            // MOVE_POOL_PATCHES entry exists to cover (Golisopod for u-turn/aqua-jet) — the
+            // patch wouldn't otherwise help here since this candidate list is what search
+            // checks in the first place. fetchPokemonCached takes a name just as well as an id.
+            val candidateKeys = (candidateIds + speciesPatchedFor(slug)).distinct()
+
+            // learned_by_pokemon has no per-entry learn-method breakdown, so it's only a
+            // candidate list (any game, any method) — confirm each one Champions-legally
+            // via its own movePool (movePoolFor's train-preferred logic), the same check
+            // each Pokémon's own move picker already enforces. Bounded-concurrency fan-out:
+            // a popular move can have 200+ candidates and this is a one-shot search, not
+            // something to run fully sequentially. A candidate fetch that fails (not just
+            // resolves to "no match") is left to propagate rather than silently dropped —
+            // otherwise a network hiccup would report success with an incomplete/empty set,
+            // and the caller would cache that as if it were the real answer.
+            val gate = Semaphore(MOVE_SEARCH_CONCURRENCY)
+            coroutineScope {
+                candidateKeys.map { key ->
+                    async { gate.withPermit { fetchPokemonCached(key) } }
+                }.awaitAll()
+            }.filter { slug in it.toDomain().movePool }
+                .map { it.id }
+                .toSet()
+        }.mapCatchingCancellation()
+    }
+
+    private suspend fun fetchMoveCached(slug: String): MoveDto {
+        val key = moveKey(slug)
+        return cacheDao.get(key)?.body
+            ?.let { runCatching { json.decodeFromString(MoveDto.serializer(), it) }.getOrNull() }
+            ?: service.getMove(slug).also {
+                cacheDao.put(RawCacheEntity(key, json.encodeToString(MoveDto.serializer(), it), now()))
+            }
+    }
+
+    // v4: cache bumped when learned_by_pokemon was added to MoveDto (v3 was bumped for
+    // flavor_text_entries — PokéAPI leaves effect_entries empty for many of the newest
+    // moves, e.g. Upper Hand, Dire Claw, even though it has a perfectly good flavor-text
+    // description, so that's the fallback getMoveInfo uses).
+    private fun moveKey(slug: String) = "move/v4/$slug"
+
     override suspend fun resolvePokemonId(rawName: String): Result<Int> = withContext(io) {
         runCatching {
             val slug = PokemonNames.normalize(rawName)
@@ -363,6 +408,7 @@ class PokemonRepositoryImpl @Inject constructor(
         private const val META_INDEX_SYNC = "index_synced_at"
         private const val INDEX_TTL_MS = 7L * 24 * 60 * 60 * 1000
         private const val DETAIL_TTL_MS = 24L * 60 * 60 * 1000
+        private const val MOVE_SEARCH_CONCURRENCY = 16
     }
 }
 

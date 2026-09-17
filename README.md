@@ -104,7 +104,17 @@ baselineprofile/ com.android.test module that generates the startup profile
   instances: PokeAPI, and the Anthropic API (separate `OkHttpClient` that injects
   `x-api-key` / `anthropic-version` headers). The PokeAPI client adds a
   `RetryInterceptor` (exponential backoff + jitter on `429` / `5xx` / network
-  errors) because the team builder fans out many small requests at once.
+  errors) because the team builder fans out many small requests at once — most
+  visibly the move-search filter, which can check 200+ candidate Pokémon for
+  one query; `pokemonIdsOfMove` throttles that fan-out through a `Semaphore`
+  rather than firing every request at once.
+* **Cache-key versioning** — a cached entry stores the re-serialized DTO, not
+  the raw response body, so adding a field to a DTO (`version_group_details`
+  on `MoveSlotDto`, `learned_by_pokemon` on `MoveDto`) doesn't retroactively
+  appear in what's already on disk. `PokemonRepositoryImpl` bumps that entry's
+  cache key (`pokemon/v2/…`, `move/v4/…`) whenever this happens, so a stale
+  pre-existing cache is simply orphaned and re-fetched instead of silently
+  decoding to the new field's default.
 * **Images** — Coil, with a 128 MB disk cache configured in `PokeDexApplication`
   so sprites and artwork survive offline. The 18 Scarlet/Violet type-symbol icons
   are bundled as `drawable-nodpi` resources (the team-analysis screen draws a few
@@ -153,7 +163,15 @@ pure Kotlin under `domain/team/`:
   prefers `train`-tagged moves when PokéAPI has populated them for a species,
   falling back to the older "every move from any game" union — patched for
   specific known PokéAPI gaps via `MOVE_POOL_PATCHES` (e.g. Golisopod's
-  U-turn and Aqua Jet) — for species PokéAPI hasn't reached yet.
+  U-turn and Aqua Jet), only in that fallback branch, never on top of `train`
+  data — for species PokéAPI hasn't reached yet.
+* **Search by move** — the "Add Pokémon" sheet's search field toggles between
+  Name and Move. Move search first gets a cheap candidate list from PokéAPI's
+  `/move/{name}` endpoint (`learned_by_pokemon`), then — since that reverse
+  index carries no per-entry learn-method info — verifies each candidate the
+  same Champions-accurate way as above (`PokemonRepositoryImpl.pokemonIdsOfMove`),
+  so a move that's disabled in Champions for a given species (Magical Leaf on
+  Tsareena, again) correctly excludes it from the results too.
 * **`CompetitiveItems`** — held-item catalogue (staples, choice, berries, ~80
   Mega Stones incl. Champions-only ones). Carries an `apiSlug` for items PokéAPI
   names differently (Leek → `stick`) and a bundled `blurb` for the many Gen
@@ -231,7 +249,12 @@ Unit (`./gradlew :app:testDebugUnitTest`):
 * `PokemonSummaryTest` — `displayName` title-casing, gender-segment stripping
 * `ClassificationParserTest` — identify-JSON parsing: fences, prose, percentages,
   `"null"`, malformed input
-* `PokemonRepositoryImplTest` — index refresh filtering + name resolution (MockK)
+* `PokemonRepositoryImplTest` — index refresh filtering, name resolution, the
+  legacy-cache-key regression (a pre-Champions cache entry gets refreshed
+  rather than silently trusted), and `pokemonIdsOfMove` only returning species
+  where the move is actually Champions-legal (MockK)
+* `MappersTest` — `movePoolFor`'s train-preferred/fallback/patch logic,
+  including that a patch never overrides real `train` data
 * `RetryInterceptorTest` — retry / backoff / give-up behaviour on a fake chain
 * `TeamModelsTest` — `StatCalc` formula, Stat Alignments, `Gender`, SP helpers
 * `ChampionsLegalTest` — species and item legality
