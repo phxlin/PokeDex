@@ -56,7 +56,6 @@ data class MemberForm(
     val artworkShiny: String? = null,
 ) {
     val isMega: Boolean get() = kind?.isMega == true
-    val isRegional: Boolean get() = kind?.isRegional == true
 
     fun artworkUrl(shiny: Boolean) =
         (if (shiny) artworkShiny ?: artworkDefault else artworkDefault)

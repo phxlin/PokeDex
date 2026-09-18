@@ -1,7 +1,6 @@
 package com.pokedex.app.ui.team
 
 import androidx.lifecycle.viewModelScope
-import com.google.common.truth.Truth.assertThat
 import com.pokedex.app.data.repository.PokemonRepository
 import com.pokedex.app.data.repository.TeamRepository
 import io.mockk.coEvery

@@ -76,8 +76,8 @@ import kotlin.math.roundToInt
 @Composable
 fun TeamsListScreen(
     onOpenTeam: (Long) -> Unit,
-    onHome: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    onHome: (() -> Unit)? = null,
     viewModel: TeamListViewModel = hiltViewModel(),
 ) {
     val teams by viewModel.teams.collectAsStateWithLifecycle()
@@ -287,8 +287,8 @@ private fun TeamRow(
     team: Team,
     formSprites: Map<String, String>,
     onDelete: () -> Unit,
-    highlighted: Boolean = false,
     modifier: Modifier = Modifier,
+    highlighted: Boolean = false,
 ) {
     Surface(
         color = Color.White,
