@@ -40,7 +40,7 @@ as tappable:
    ./gradlew :app:assembleDebug        # build the APK
    ./gradlew :app:installDebug         # install on a running device/emulator
    ./gradlew :app:testDebugUnitTest    # unit tests
-   ./gradlew :app:connectedDebugAndroidTest   # instrumented + Compose UI test
+   ./gradlew :app:connectedDebugAndroidTest   # instrumented + Compose UI tests
    ./gradlew :app:detekt               # static analysis (baseline in config/detekt/)
    ./gradlew :app:generateBaselineProfile     # regenerate the startup profile (needs a device)
    ```
@@ -67,7 +67,7 @@ Get a key at <https://console.anthropic.com/>. The classifier uses model
   type/generation filters and sort.
 * **Detail pages** — artwork, sprites, lore, stats, abilities, evolutions
   (including regional trees), swipeable form tabs and cry playback. See
-  [Data flow](#data-flow).
+  [Evolution chains](#evolution-chains) and [Cry playback](#cry-playback).
 * **Team builder** — six-slot teams under the **Pokémon Champions** ruleset:
   legal-species/item gating, Stat Points and Stat Alignments, swipeable forms and
   Mega Evolution, search by move, drag-to-reorder, copy a Pokémon between teams,
@@ -120,23 +120,51 @@ app/
 baselineprofile/ com.android.test module that generates the startup profile
 ```
 
-### Data flow
+### Stack
 
-* **Networking** — Retrofit + OkHttp + `kotlinx.serialization`. Two Retrofit
-  instances: PokeAPI, and the Anthropic API (separate `OkHttpClient` that injects
-  `x-api-key` / `anthropic-version` headers). The PokeAPI client adds a
-  `RetryInterceptor` (exponential backoff + jitter on `429` / `5xx` / network
-  errors) because the team builder fans out many small requests at once — most
-  visibly the move-search filter, which can check 200+ candidate Pokémon for
-  one query; `pokemonIdsOfMove` throttles that fan-out through a `Semaphore`
-  rather than firing every request at once.
-* **Cache-key versioning** — a cached entry stores the re-serialized DTO, not
-  the raw response body, so adding a field to a DTO (`version_group_details`
-  on `MoveSlotDto`, `learned_by_pokemon` on `MoveDto`) doesn't retroactively
-  appear in what's already on disk. `PokemonRepositoryImpl` bumps that entry's
-  cache key (`pokemon/v2/…`, `move/v4/…`) whenever this happens, so a stale
-  pre-existing cache is simply orphaned and re-fetched instead of silently
-  decoding to the new field's default.
+| Concern         | Choice                                                                                               |
+| --------------- | ---------------------------------------------------------------------------------------------------- |
+| Language        | Kotlin                                                                                               |
+| UI              | Jetpack Compose + Material 3, Compose Navigation, three swipeable tabs behind the bottom bar         |
+| Architecture    | MVVM + Repository, unidirectional `StateFlow`                                                        |
+| DI              | Hilt                                                                                                 |
+| Persistence     | Room — the disposable Pokédex cache and the user's saved teams, in one database                      |
+| Networking      | Retrofit + OkHttp + kotlinx.serialization, with a retrying interceptor for the PokeAPI client        |
+| Images          | Coil (128 MB disk cache) plus bundled type-symbol drawables                                          |
+| Camera          | CameraX                                                                                              |
+| Identification  | Anthropic Messages API (vision), optional — the app works without a key                              |
+| Tests           | JUnit, Turbine, MockK, Truth, Room `MigrationTestHelper`, Compose UI tests                           |
+| Tooling         | detekt, AndroidX Baseline Profile + Macrobenchmark                                                   |
+
+`applicationId` / `namespace` = `com.pokedex.app` (debug build is `.debug`).
+`minSdk 26`, `compileSdk` / `targetSdk 35`.
+
+### Toolchain
+
+|                       | Version                                                                                                                                |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Android Gradle Plugin | 8.13.2                                                                                                                                 |
+| Gradle wrapper        | 8.13                                                                                                                                   |
+| Kotlin / KSP          | 2.0.21 / 2.0.21-1.0.28                                                                                                                 |
+| Compose BOM           | 2024.10.01                                                                                                                             |
+| JDK                   | 17–21 (Gradle 8.13 doesn't support the JDK 25 that recent Android Studio bundles, so point Gradle at a JDK 17–21 — see *Requirements*) |
+
+Every library version is pinned in `gradle/libs.versions.toml`.
+
+### Rate limiting & retries
+
+* **Two clients.** Retrofit + OkHttp + `kotlinx.serialization`, with one Retrofit
+  instance for PokeAPI and one for the Anthropic API (a separate `OkHttpClient`
+  that injects `x-api-key` / `anthropic-version` headers).
+* **Retries.** The PokeAPI client adds a `RetryInterceptor` (exponential backoff
+  + jitter on `429` / `5xx` / network errors) because the team builder fans out
+  many small requests at once.
+* **Bounded fan-out.** The heaviest case is the move-search filter, which can
+  check 200+ candidate Pokémon for one query; `pokemonIdsOfMove` throttles that
+  through a `Semaphore` rather than firing every request at once.
+
+### Offline behaviour
+
 * **Images** — Coil, with a 128 MB disk cache configured in `PokeDexApplication`
   so sprites and artwork survive offline. The 18 Scarlet/Violet type-symbol icons
   are bundled as `drawable-nodpi` resources (the team-analysis screen draws a few
@@ -155,19 +183,31 @@ baselineprofile/ com.android.test module that generates the startup profile
   ability. Saved teams (`team` / `team_member`) are user data, not cache — the
   schema is versioned (JSONs in `app/schemas/`) and a destructive fallback is
   only allowed *from version 1*; see `PokeDexMigrations` and "Known limitations".
+* **Cache-key versioning** — a cached entry stores the re-serialized DTO, not
+  the raw response body, so adding a field to a DTO (`version_group_details`
+  on `MoveSlotDto`, `learned_by_pokemon` on `MoveDto`) doesn't retroactively
+  appear in what's already on disk. `PokemonRepositoryImpl` bumps that entry's
+  cache key (`pokemon/v2/…`, `move/v4/…`) whenever this happens, so a stale
+  pre-existing cache is simply orphaned and re-fetched instead of silently
+  decoding to the new field's default.
 * **Loading states** — every screen has loading / empty / error states with
   retry, and progressively-loaded views fill in per item: team slots and Pokédex
   cards render a spinner until their data arrives, and `SpriteImage` shows one
   over any individual sprite/artwork still being fetched by Coil, rather than
   showing a blank or half-populated card.
-* **Cry playback** — `MediaPlayer` streams `cries.latest`, falling back to
-  `cries.legacy`.
-* **Evolutions** — PokéAPI folds regional varieties into the base species' chain
-  and tags the regional methods with `base_form` / `evolved_form`. `EvolutionNode`
-  reconstructs the per-region tree from those tags (`regionForms`, `leadsToRegion`,
-  `visibleChildren`, `methodFor`) so a form tab like *Alolan Raichu* shows
-  `Pichu → Pikachu → (Thunder Stone) → Alolan Raichu`, keeping intermediate stages
-  that have no regional form of their own.
+
+### Cry playback
+
+`MediaPlayer` streams `cries.latest`, falling back to `cries.legacy`.
+
+### Evolution chains
+
+PokéAPI folds regional varieties into the base species' chain and tags the
+regional methods with `base_form` / `evolved_form`. `EvolutionNode` reconstructs
+the per-region tree from those tags (`regionForms`, `leadsToRegion`,
+`visibleChildren`, `methodFor`) so a form tab like *Alolan Raichu* shows
+`Pichu → Pikachu → (Thunder Stone) → Alolan Raichu`, keeping intermediate stages
+that have no regional form of their own.
 
 ### Team builder
 
@@ -294,6 +334,9 @@ Unit (`./gradlew :app:testDebugUnitTest`):
 * `TeamEditorVerificationTest` — the enrichment-race guards above: an edit or a
   slot swap made while a fetch is in flight survives, a swapped member's forms
   still load at its new slot, and a failed fetch doesn't clear a saved ability
+* `PokemonPickerVerificationTest` — leaving Move search for Name mode clears a
+  cancelled search's "checking…" state and a failed search's error, rather than
+  leaving either stuck on screen
 * `TeamListViewModelTest` — `swapTeams` delegates to the repository, and is a
   no-op for two equal ids
 
@@ -335,22 +378,15 @@ Instrumented (`./gradlew :app:connectedDebugAndroidTest`):
   `team_member.level` packs the shiny flag — a future migration should un-pack
   them (`MIGRATION_2_3` only added `team.sortOrder`). Splitting the disposable
   cache into its own database would be cleaner still.
-* **No CI** — a workflow running `detekt` + `testDebugUnitTest` + `lint` +
-  `assembleDebug` would catch regressions.
-* **Accessibility** — icon-only controls and the hero artwork are labelled, but
-  the coverage grids read as a stream of type names rather than a spoken summary.
-* **Classifier model** — `claude-sonnet-4-6`; newer models are available.
 * **`ChampionsLegal` is a static snapshot** — the species/item allow-list is
   hand-curated for the current regulation (Reg M-C, Sept–Dec 2026) rather than
   fetched from anywhere, so it won't update itself when the regulation rotates;
   someone has to refresh `ChampionsLegal.SPECIES` / `ITEMS` by hand at that point.
-
-## Dependencies
-
-AGP 8.13, Kotlin 2.0, KSP, Compose BOM 2024.10, Navigation Compose, Hilt, Room,
-Retrofit/OkHttp, `kotlinx.serialization`, Coil, CameraX; detekt and the
-AndroidX Baseline Profile / Macrobenchmark toolchain for tooling. Full versions
-in `gradle/libs.versions.toml`.
+* **Accessibility** — icon-only controls and the hero artwork are labelled, but
+  the coverage grids read as a stream of type names rather than a spoken summary.
+* **Classifier model** — `claude-sonnet-4-6`; newer models are available.
+* **No CI** — a workflow running `detekt` + `testDebugUnitTest` + `lint` +
+  `assembleDebug` would catch regressions.
 
 ## Legal
 
