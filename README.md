@@ -9,9 +9,9 @@ with a vision LLM.
 Three bottom-nav tabs — **Pokédex**, **Teams**, **Identify** — swipeable as well
 as tappable:
 
-| Pokédex | Detail | Teams | Identify |
-|---|---|---|---|
-| ![Pokédex grid](docs/screenshots/pokedex.png) | ![Detail screen](docs/screenshots/detail.png) | ![Team builder](docs/screenshots/teams.png) | ![Identify screen](docs/screenshots/identify.png) |
+| Pokédex                                                                                            | Detail                                                                                  | Teams                                                                                                                                                                    | Identify                                                 |
+| -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- |
+| ![Pokédex grid](docs/screenshots/pokedex.png)                                                      | ![Detail screen](docs/screenshots/detail.png)                                           | ![Team builder](docs/screenshots/teams.png)                                                                                                                              | ![Identify screen](docs/screenshots/identify.png)        |
 | Scrollable grid of every Pokémon with instant name/number search, type/generation filters and sort | Artwork, sprites, lore, stats, abilities, evolutions, swipeable form tabs, cry playback | Six-slot team builder: legal-species/item gating, Stat Points, Stat Alignments, swipeable forms & Mega Evolution, per-Pokémon defensive/offensive type-coverage analysis | Live camera or gallery → classified → jumps to the match |
 
 ## Requirements
@@ -60,6 +60,28 @@ The camera-identification feature calls the **Anthropic Messages API**. The key 
 
 Get a key at <https://console.anthropic.com/>. The classifier uses model
 `claude-sonnet-4-6` (see `AnthropicPokemonClassifier.MODEL`).
+
+## Features
+
+* **Pokédex** — scrollable grid of every Pokémon with instant name/number search,
+  type/generation filters and sort.
+* **Detail pages** — artwork, sprites, lore, stats, abilities, evolutions
+  (including regional trees), swipeable form tabs and cry playback. See
+  [Data flow](#data-flow).
+* **Team builder** — six-slot teams under the **Pokémon Champions** ruleset:
+  legal-species/item gating, Stat Points and Stat Alignments, swipeable forms and
+  Mega Evolution, search by move, drag-to-reorder, copy a Pokémon between teams,
+  and per-Pokémon defensive/offensive type-coverage analysis. See
+  [Team builder](#team-builder).
+* **Camera identification** — point the camera at a Pokémon (card, plush,
+  screenshot, drawing, costume…) or pick from the gallery; a vision LLM
+  identifies it and jumps to the match. See
+  [Camera identification](#camera-identification).
+* **Offline-first** — Room caches the Dex and every detail response
+  (stale-while-revalidate), and every screen has loading / empty / error states
+  with retry.
+* **Swipeable tabs** — the three main screens live in a `HorizontalPager` behind
+  the bottom nav, so a swipe and a tap move between them in sync.
 
 ## Architecture
 
