@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import kotlin.time.Duration.Companion.milliseconds
 
 /** Normalizes free-text move search input to a PokéAPI move slug, e.g. "U-Turn " -> "u-turn". */
 private fun moveSlug(raw: String) = raw.trim().lowercase().replace(' ', '-')
@@ -83,7 +84,7 @@ class PokemonPickerViewModel @Inject constructor(
             controls
                 .map { if (it.searchMode == PickerSearchMode.MOVE) moveSlug(it.searchText) else "" }
                 .distinctUntilChanged()
-                .debounce(400)
+                .debounce(400.milliseconds)
                 // collectLatest, not collect: verifying a popular move can mean 200+ candidate
                 // fetches, and switching to a different move (or back to Name mode) mid-search
                 // should cancel that work rather than block behind it.

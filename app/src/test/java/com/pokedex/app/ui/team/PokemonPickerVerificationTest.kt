@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.Test
+import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PokemonPickerVerificationTest {
@@ -32,13 +33,13 @@ class PokemonPickerVerificationTest {
             vm.setSearchMode(PickerSearchMode.MOVE)
             vm.onSearchTextChange("surf")
             runCurrent()
-            advanceTimeBy(401)
+            advanceTimeBy(401.milliseconds)
             runCurrent()
             assertThat(vm.isFilteringByMove.value).isTrue()
 
             vm.setSearchMode(PickerSearchMode.NAME)
             runCurrent()
-            advanceTimeBy(401)
+            advanceTimeBy(401.milliseconds)
             runCurrent()
 
             assertThat(vm.isFilteringByMove.value).isFalse()
@@ -59,13 +60,13 @@ class PokemonPickerVerificationTest {
             vm.setSearchMode(PickerSearchMode.MOVE)
             vm.onSearchTextChange("surf")
             runCurrent()
-            advanceTimeBy(401)
+            advanceTimeBy(401.milliseconds)
             runCurrent()
             assertThat(vm.hasMoveError.value).isTrue()
 
             vm.setSearchMode(PickerSearchMode.NAME)
             runCurrent()
-            advanceTimeBy(401)
+            advanceTimeBy(401.milliseconds)
             runCurrent()
 
             assertThat(vm.hasMoveError.value).isFalse()

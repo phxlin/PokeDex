@@ -2,6 +2,7 @@
 
 package com.pokedex.app.ui.team
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -15,7 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.sp
@@ -35,13 +36,26 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick as semanticsOnClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
@@ -57,6 +71,7 @@ import com.pokedex.app.ui.components.SpriteImage
 import com.pokedex.app.ui.theme.DexAvatarWell
 import com.pokedex.app.ui.theme.DexCardInk
 import com.pokedex.app.ui.theme.DexRed
+import kotlin.math.roundToInt
 
 @Composable
 fun TeamsListScreen(
@@ -99,20 +114,13 @@ fun TeamsListScreen(
                     )
                 }
             } else {
-                LazyColumn(
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    items(teams, key = { it.id }) { team ->
-                        TeamRow(
-                            team,
-                            formSprites = formSprites,
-                            onClick = { onOpenTeam(team.id) },
-                            onDelete = { teamPendingDelete = team },
-                        )
-                    }
-                    item { Spacer(Modifier.size(72.dp)) }
-                }
+                TeamsList(
+                    teams = teams,
+                    formSprites = formSprites,
+                    onOpenTeam = onOpenTeam,
+                    onDelete = { teamPendingDelete = it },
+                    onSwap = viewModel::swapTeams,
+                )
             }
         }
     }
@@ -146,19 +154,148 @@ fun TeamsListScreen(
     }
 }
 
+/** Accessible equivalents of the drag gesture, for the "Move …" custom actions. */
+private fun teamReorderActions(
+    index: Int,
+    teams: List<Team>,
+    team: Team,
+    onSwap: (Long, Long) -> Unit,
+): List<CustomAccessibilityAction> = buildList {
+    if (index > 0) add(CustomAccessibilityAction("Move up") { onSwap(team.id, teams[index - 1].id); true })
+    if (index < teams.lastIndex) add(CustomAccessibilityAction("Move down") { onSwap(team.id, teams[index + 1].id); true })
+}
+
+/** The scrollable team list, with long-press-drag reordering (see [tapOrDragToReorder]). */
+@Composable
+private fun TeamsList(
+    teams: List<Team>,
+    formSprites: Map<String, String>,
+    onOpenTeam: (Long) -> Unit,
+    onDelete: (Team) -> Unit,
+    onSwap: (Long, Long) -> Unit,
+) {
+    val haptics = LocalHapticFeedback.current
+    // Disabled only once a row is actually being dragged (see the tapOrDragToReorder
+    // call below for why this list can't disable scroll on every touch-down the way
+    // TeamGrid/the move list do).
+    var listTouchActive by remember { mutableStateOf(false) }
+    var rowHeightPx by remember { mutableStateOf(0f) }
+    var draggingId by remember { mutableStateOf<Long?>(null) }
+    var dragOffsetY by remember { mutableStateOf(0f) }
+    var dropIndex by remember { mutableStateOf<Int?>(null) }
+
+    if (teams.size > 1) {
+        Text(
+            "Press and hold a team to drag it to a new position.",
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White.copy(alpha = 0.75f),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        )
+    }
+
+    LazyColumn(
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        userScrollEnabled = !listTouchActive,
+        modifier = Modifier.testTag("teams_list"),
+    ) {
+        itemsIndexed(teams, key = { _, team -> team.id }) { index, team ->
+            val isDragging = draggingId == team.id
+            val isDropTarget = dropIndex == index && draggingId != null && !isDragging
+            // tapOrDragToReorder is keyed on team.id (stable across a swap, so a
+            // second drag doesn't get interrupted mid-gesture) — but that also means
+            // its pointerInput coroutine is NOT relaunched when this row's index
+            // shifts after a swap, so a directly-captured `index`/`teams` would stay
+            // pinned to this row's position from the drag *before* last. Reading
+            // through rememberUpdatedState instead makes the drag callbacks below
+            // always see the current position, no matter how stale the coroutine is.
+            val currentIndex by rememberUpdatedState(index)
+            val currentTeams by rememberUpdatedState(teams)
+            TeamRow(
+                team,
+                formSprites = formSprites,
+                highlighted = isDropTarget,
+                onDelete = { onDelete(team) },
+                modifier = Modifier
+                    .testTag("team_row_${team.id}")
+                    .onSizeChanged { if (it.height > 0) rowHeightPx = it.height.toFloat() }
+                    .zIndex(if (isDragging) 1f else 0f)
+                    .graphicsLayer {
+                        if (isDragging) {
+                            translationY = dragOffsetY
+                            scaleX = 1.02f
+                            scaleY = 1.02f
+                            shadowElevation = 10f
+                        }
+                    }
+                    .semantics {
+                        role = Role.Button
+                        semanticsOnClick(label = "Open ${team.name}") { onOpenTeam(team.id); true }
+                        customActions = teamReorderActions(index, teams, team, onSwap)
+                    }
+                    .tapOrDragToReorder(
+                        // Restarting on identity changes isn't a concern here: unlike
+                        // TeamGrid's slots, a row's onClick/onSwap never change shape
+                        // across recompositions, so a stable per-team key is enough —
+                        // but it also means this coroutine outlives any single swap,
+                        // so onDragStart/onDrag/onDragEnd read currentIndex/currentTeams
+                        // (rememberUpdatedState) rather than the index/teams captured
+                        // when the coroutine was first launched.
+                        key = team.id,
+                        // Unlike TeamGrid/the move list, this list IS the entire screen — almost
+                        // every scroll the user makes starts with a finger on a row, so disabling
+                        // scroll at raw touch-down (before we even know this is a drag) would make
+                        // ordinary scrolling unreliable here specifically. Gate it on onDragStart
+                        // instead: a stationary long-press never triggers the ancestor's own
+                        // touch-slop scroll-claim in the first place, so this loses nothing for
+                        // genuine holds while leaving ordinary swipes alone.
+                        onActiveChange = { if (!it) listTouchActive = false },
+                        onClick = { onOpenTeam(team.id) },
+                        onDragStart = {
+                            listTouchActive = true
+                            draggingId = team.id
+                            dragOffsetY = 0f
+                            dropIndex = currentIndex
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        },
+                        onDrag = { delta ->
+                            dragOffsetY += delta.y
+                            if (rowHeightPx > 0f) {
+                                val moved = (dragOffsetY / rowHeightPx).roundToInt()
+                                dropIndex = (currentIndex + moved).coerceIn(0, currentTeams.lastIndex)
+                            }
+                        },
+                        onDragEnd = {
+                            listTouchActive = false
+                            val target = dropIndex
+                            if (target != null && target != currentIndex) {
+                                onSwap(team.id, currentTeams[target].id)
+                            }
+                            draggingId = null
+                            dropIndex = null
+                            dragOffsetY = 0f
+                        },
+                    ),
+            )
+        }
+        item { Spacer(Modifier.size(72.dp)) }
+    }
+}
+
 @Composable
 private fun TeamRow(
     team: Team,
     formSprites: Map<String, String>,
-    onClick: () -> Unit,
     onDelete: () -> Unit,
+    highlighted: Boolean = false,
+    modifier: Modifier = Modifier,
 ) {
     Surface(
-        onClick = onClick,
         color = Color.White,
         contentColor = DexCardInk,
         shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth(),
+        border = if (highlighted) BorderStroke(2.dp, DexRed) else null,
+        modifier = modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {

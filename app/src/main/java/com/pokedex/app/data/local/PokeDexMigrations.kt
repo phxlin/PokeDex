@@ -1,6 +1,7 @@
 package com.pokedex.app.data.local
 
 import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
  * Hand-written Room migrations for [PokeDexDatabase].
@@ -15,20 +16,29 @@ import androidx.room.migration.Migration
  *
  * Because two columns are currently reused to dodge a schema bump
  * (`team_member.teraType` packs `"<gender>|<formSlug>"`, `team_member.level` packs
- * the shiny flag — see `TeamRepository`), the first real migration should
- * probably also give gender / shiny / form their own columns and backfill them.
+ * the shiny flag — see `TeamRepository`), a future migration should probably also
+ * give gender / shiny / form their own columns and backfill them.
  */
 object PokeDexMigrations {
 
-    /** All migrations, in order. Empty until the schema moves past version 2. */
-    val ALL: Array<Migration> = emptyArray()
+    /** Adds manual drag-reorder position to the Teams list (`team.sortOrder`), backfilled
+     * to match each team's current on-screen rank (most-recently-updated first) so the
+     * first post-migration list looks unchanged until the user actually drags something. */
+    val MIGRATION_2_3 = object : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE team ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0")
+            db.execSQL(
+                """
+                UPDATE team SET sortOrder = (
+                    SELECT COUNT(*) FROM team t2
+                    WHERE t2.updatedAt > team.updatedAt
+                       OR (t2.updatedAt = team.updatedAt AND t2.id < team.id)
+                )
+                """.trimIndent(),
+            )
+        }
+    }
 
-    // Example, once a version 3 exists:
-    //
-    // val MIGRATION_2_3 = object : Migration(2, 3) {
-    //     override fun migrate(db: SupportSQLiteDatabase) {
-    //         db.execSQL("ALTER TABLE team_member ADD COLUMN gender TEXT NOT NULL DEFAULT 'DEFAULT'")
-    //         // …backfill from the packed teraType column…
-    //     }
-    // }
+    /** All migrations, in order. */
+    val ALL: Array<Migration> = arrayOf(MIGRATION_2_3)
 }

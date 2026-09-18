@@ -21,5 +21,6 @@
     <ID>ReturnCount:Mappers.kt$private fun EvolutionDetailDto.condition(): EvoCondition</ID>
     <ID>SpreadOperator:DatabaseModule.kt$DatabaseModule$(*PokeDexMigrations.ALL)</ID>
     <ID>TooManyFunctions:PokemonRepository.kt$PokemonRepository</ID>
+    <ID>TooManyFunctions:TeamDao.kt$TeamDao</ID>
   </CurrentIssues>
 </SmellBaseline>

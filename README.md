@@ -188,11 +188,14 @@ pure Kotlin under `domain/team/`:
 * **`TeamAnalysis`** — per-Pokémon defensive and offensive type coverage,
   including ability-based immunities (Flash Fire, Levitate, Lightning Rod, …) and
   counting base + Mega type combos separately.
-* **Reordering** — press-and-hold a slot in the grid, or a move in a Pokémon's
-  editor, to drag it onto another and swap their positions (`tapOrDragToReorder`
-  in `TeamEditorScreen.kt`, `TeamEditorViewModel.swapSlots` / `swapMoves`). A
-  TalkBack user gets the same capability via a "Move up/down/left/right" custom
-  accessibility action on each item, since the drag itself is touch-only.
+* **Reordering** — press-and-hold a slot in the grid, a move in a Pokémon's
+  editor, or a team in the Teams list, to drag it onto another and swap their
+  positions (`tapOrDragToReorder` in `TeamEditorScreen.kt`;
+  `TeamEditorViewModel.swapSlots` / `swapMoves`; `TeamListViewModel.swapTeams`
+  persisting to `team.sortOrder`, the list's manual position independent of
+  `updatedAt`). A TalkBack user gets the same capability via a "Move
+  up/down/left/right" custom accessibility action on each item, since the drag
+  itself is touch-only.
 * **Reuse across teams** — the "Add Pokémon" sheet can also copy an
   already-built Pokémon from one of your other saved teams in as an independent
   starting point (`TeamEditorViewModel.addFromMember`); editing it afterward
@@ -215,7 +218,9 @@ pure Kotlin under `domain/team/`:
   existing data alone rather than nulling out a saved ability.
 
 Saved teams live in Room (`TeamDao` / `TeamEntities`) — real user data, distinct
-from the disposable Pokédex cache. See "Known limitations" below.
+from the disposable Pokédex cache. The Teams list is ordered by `team.sortOrder`
+(manual, set by drag-reordering; a new team is placed first), not by last-edited
+time, so editing a team never moves it. See "Known limitations" below.
 
 ### Camera identification
 
@@ -267,12 +272,25 @@ Unit (`./gradlew :app:testDebugUnitTest`):
 * `TeamEditorVerificationTest` — the enrichment-race guards above: an edit or a
   slot swap made while a fetch is in flight survives, a swapped member's forms
   still load at its new slot, and a failed fetch doesn't clear a saved ability
+* `TeamListViewModelTest` — `swapTeams` delegates to the repository, and is a
+  no-op for two equal ids
 
 Instrumented (`./gradlew :app:connectedDebugAndroidTest`):
 
 * `PokemonListSearchTest` — typing in the search box filters the grid
 * `MigrationTest` — the current Room schema opens from scratch and through the
-  real database builder
+  real database builder, and `MIGRATION_2_3` backfills `team.sortOrder` to
+  match each team's pre-migration rank by `updatedAt`
+* `TeamDaoTest` — `swapSortOrder` actually exchanges two teams' positions
+  rather than collapsing both onto the same value, a real-SQLite regression
+  test (see `TeamDao.swapSortOrder`'s doc comment for why a single `CASE`-based
+  `UPDATE` can't be trusted to do this correctly)
+* `TeamsListScreenTest` — drives real Compose touch input (not a mock of the
+  gesture) against the Teams list: a second drag on a row that already moved
+  once uses its *current* position rather than the one its `pointerInput`
+  coroutine was first launched with, and an ordinary swipe that starts on a
+  row still scrolls the list instead of being swallowed by the reorder
+  gesture's touch handling
 
 ## Static analysis & performance
 
@@ -292,9 +310,9 @@ Instrumented (`./gradlew :app:connectedDebugAndroidTest`):
   in `PokeDexMigrations` (destructive fallback is only allowed from version 1, so
   a missing migration fails loudly instead of wiping saved teams). Two columns are
   still reused to dodge a bump — `team_member.teraType` packs `"<gender>|<formSlug>"`,
-  `team_member.level` packs the shiny flag — the first real migration should
-  un-pack them. Splitting the disposable cache into its own database would be
-  cleaner still.
+  `team_member.level` packs the shiny flag — a future migration should un-pack
+  them (`MIGRATION_2_3` only added `team.sortOrder`). Splitting the disposable
+  cache into its own database would be cleaner still.
 * **No CI** — a workflow running `detekt` + `testDebugUnitTest` + `lint` +
   `assembleDebug` would catch regressions.
 * **Accessibility** — icon-only controls and the hero artwork are labelled, but

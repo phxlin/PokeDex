@@ -68,6 +68,12 @@ class TeamListViewModel @Inject constructor(
     fun deleteTeam(id: Long) {
         viewModelScope.launch { repository.deleteTeam(id) }
     }
+
+    /** Swaps two teams' positions in the list — called as a drag lands on a new slot. */
+    fun swapTeams(id1: Long, id2: Long) {
+        if (id1 == id2) return
+        viewModelScope.launch { repository.swapTeams(id1, id2) }
+    }
 }
 
 fun formSpriteKey(slug: String, shiny: Boolean): String = "$slug|$shiny"

@@ -70,8 +70,6 @@ import com.pokedex.app.domain.team.heldItemFallbackGlyph
 import com.pokedex.app.ui.components.POKEMON_TYPES
 import com.pokedex.app.ui.components.SelectableTypeChip
 import com.pokedex.app.ui.components.TypeChip
-import com.pokedex.app.ui.components.TypeSymbol
-import com.pokedex.app.ui.components.typeColor
 import com.pokedex.app.ui.list.Generation
 import com.pokedex.app.ui.list.SortOption
 import com.pokedex.app.ui.theme.DexStatDown
@@ -112,7 +110,7 @@ private fun SheetSearchField(
     value: String,
     onChange: (String) -> Unit,
     placeholder: String,
-    modifier: Modifier = Modifier.padding(horizontal = 16.dp),
+    modifier: Modifier = Modifier,
 ) {
     TextField(
         value = value,
@@ -120,7 +118,7 @@ private fun SheetSearchField(
         placeholder = { Text(placeholder, color = SheetDim) },
         leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = SheetDim) },
         singleLine = true,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.padding(horizontal = 16.dp).fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = TextFieldDefaults.colors(
             focusedContainerColor = SheetField,
@@ -645,7 +643,7 @@ fun ItemPickerSheet(
         }
         Spacer(Modifier.size(4.dp))
         Text(
-            "Greyed-out items aren't legal in ${com.pokedex.app.domain.team.ChampionsLegal.REGULATION}.",
+            "Greyed-out items aren't legal in ${ChampionsLegal.REGULATION}.",
             style = MaterialTheme.typography.labelSmall,
             color = SheetDim,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
@@ -733,7 +731,7 @@ fun NaturePickerSheet(onDismiss: () -> Unit, onPick: (Nature) -> Unit) {
                         Text(n.display, style = MaterialTheme.typography.bodyLarge, color = SheetInk, modifier = Modifier.weight(1f))
                         if (n.raises != null) {
                             Text(
-                                "+${n.raises!!.short}",
+                                "+${n.raises.short}",
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = DexStatUp,

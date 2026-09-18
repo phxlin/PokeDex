@@ -11,7 +11,7 @@ import androidx.room.RoomDatabase
         TeamEntity::class,
         TeamMemberEntity::class,
     ],
-    version = 2, // keep in sync with LATEST_VERSION
+    version = 3, // keep in sync with LATEST_VERSION
     exportSchema = true,
 )
 abstract class PokeDexDatabase : RoomDatabase() {
@@ -24,6 +24,6 @@ abstract class PokeDexDatabase : RoomDatabase() {
         const val NAME = "pokedex.db"
 
         /** Current schema version — bump alongside `@Database(version = …)` and add a migration. */
-        const val LATEST_VERSION = 2
+        const val LATEST_VERSION = 3
     }
 }

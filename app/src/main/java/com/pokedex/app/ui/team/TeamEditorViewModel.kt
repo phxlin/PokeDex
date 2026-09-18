@@ -462,9 +462,9 @@ class TeamEditorViewModel @Inject constructor(
         viewModelScope.launch { teamRepo.saveMembers(teamId, _state.value.members) }
     }
 
-    private fun mutate(slot: Int, block: (TeamMember) -> TeamMember) {
+    private fun mutate(slot: Int, persist: Boolean = true, block: (TeamMember) -> TeamMember) {
         _state.update { s -> s.copy(members = s.members.map { if (it.slot == slot) block(it) else it }) }
-        persist()
+        if (persist) persist()
     }
 
     fun openSlot(slot: Int) {
@@ -512,9 +512,9 @@ class TeamEditorViewModel @Inject constructor(
         }
     }
 
-    private fun applyForm(slot: Int, form: MemberForm, base: MemberForm?) {
+    private fun applyForm(slot: Int, form: MemberForm, base: MemberForm?, persist: Boolean = true) {
         val src = if (form.isBase) base else form
-        mutate(slot) { m ->
+        mutate(slot, persist = persist) { m ->
             val abilities = src?.abilities ?: m.abilityChoices
             m.copy(
                 formSlug = if (form.isBase) null else form.slug,
@@ -555,14 +555,18 @@ class TeamEditorViewModel @Inject constructor(
             _state.update { it.copy(forms = it.forms + (currentSlot to list)) }
             list.flatMap { f -> f.abilities.map { it.name } }.distinct().forEach { ensureAbilityInfo(it) }
 
-            // Re-apply a previously-saved regional form choice.
+            // Re-apply a previously-saved regional form choice — this only hydrates
+            // transient UI fields (types/stats/movePool aren't columns in TeamMemberEntity
+            // at all), so it must not persist: every team-open would otherwise write an
+            // unchanged row back to Room purely to redisplay data that was never actually
+            // edited, bumping updatedAt and pushing the team to the top of the list.
             val m = _state.value.members.firstOrNull { it.slot == currentSlot }
             val stored = m?.formSlug?.let { slug -> list.firstOrNull { it.slug == slug } }
             stored?.let {
                 if (it.isMega) {
                     mutate(currentSlot) { member -> member.copy(formSlug = null) } // legacy
                 } else {
-                    applyForm(currentSlot, it, list.firstOrNull())
+                    applyForm(currentSlot, it, list.firstOrNull(), persist = false)
                 }
             }
         }

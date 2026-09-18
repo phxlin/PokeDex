@@ -24,6 +24,7 @@ interface TeamRepository {
     suspend fun renameTeam(id: Long, name: String)
     suspend fun deleteTeam(id: Long)
     suspend fun saveMembers(teamId: Long, members: List<TeamMember>)
+    suspend fun swapTeams(id1: Long, id2: Long)
 }
 
 @Singleton
@@ -39,7 +40,12 @@ class TeamRepositoryImpl @Inject constructor(
         dao.observeTeam(id).map { it?.toDomain() }
 
     override suspend fun createTeam(name: String): Long = withContext(io) {
-        dao.insertTeam(TeamEntity(name = name.ifBlank { "New Team" }, updatedAt = System.currentTimeMillis()))
+        val now = System.currentTimeMillis()
+        // Negative-of-now always sorts before any prior team's sortOrder (0, or a small
+        // swapped value from manual reordering), and before any later-created team's own
+        // (more negative) value — so a new team leads the list, same as the old
+        // updatedAt-DESC default did, without a read-then-write race against other inserts.
+        dao.insertTeam(TeamEntity(name = name.ifBlank { "New Team" }, updatedAt = now, sortOrder = -now))
     }
 
     override suspend fun renameTeam(id: Long, name: String) = withContext(io) {
@@ -51,6 +57,10 @@ class TeamRepositoryImpl @Inject constructor(
     override suspend fun saveMembers(teamId: Long, members: List<TeamMember>) = withContext(io) {
         dao.replaceMembers(teamId, members.map { it.toEntity(teamId) })
         dao.touchTeam(teamId, System.currentTimeMillis())
+    }
+
+    override suspend fun swapTeams(id1: Long, id2: Long) = withContext(io) {
+        dao.swapSortOrder(id1, id2)
     }
 }
 

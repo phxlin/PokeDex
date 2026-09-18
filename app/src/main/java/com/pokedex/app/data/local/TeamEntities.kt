@@ -12,6 +12,8 @@ data class TeamEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val updatedAt: Long,
+    /** User-controlled position in the Teams list (ascending), set by long-press drag reordering. */
+    val sortOrder: Long = 0,
 )
 
 @Entity(
