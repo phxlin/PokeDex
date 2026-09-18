@@ -329,3 +329,13 @@ AGP 8.13, Kotlin 2.0, KSP, Compose BOM 2024.10, Navigation Compose, Hilt, Room,
 Retrofit/OkHttp, `kotlinx.serialization`, Coil, CameraX; detekt and the
 AndroidX Baseline Profile / Macrobenchmark toolchain for tooling. Full versions
 in `gradle/libs.versions.toml`.
+
+## Legal
+
+Copyright (c) 2026 phxlin. All rights reserved.
+
+This is an unofficial fan project. It is not affiliated with, endorsed by, or
+sponsored by Nintendo, Game Freak, or The Pokémon Company. Pokémon and Pokémon
+character names are trademarks of their respective owners, and all related
+names, sprites, and artwork belong to them; the copyright notice above covers
+only this project's own code. Data is fetched from [PokéAPI](https://pokeapi.co).
