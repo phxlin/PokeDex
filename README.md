@@ -9,10 +9,15 @@ with a vision LLM.
 Three bottom-nav tabs — **Pokédex**, **Teams**, **Identify** — swipeable as well
 as tappable:
 
-| Pokédex                                                                                 | Detail                                                                                  | Teams                                                                                    | Team builder                                                                               | Identify                                                                            |
-| --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| ![Pokédex grid](docs/screenshots/pokedex.png)                                           | ![Detail screen](docs/screenshots/detail.png)                                           | ![Teams list](docs/screenshots/teams-list.png)                                           | ![Team builder](docs/screenshots/teams.png)                                                | ![Identify screen](docs/screenshots/identify.png)                                   |
-| Grid of every Pokémon with instant name/number search, type/generation filters and sort | Artwork, sprites, lore, stats, abilities, evolutions, swipeable form tabs, cry playback | Saved teams as cards, long-press to reorder, backup export/import/delete from the ⋮ menu | Six-slot builder: legal-species/item gating, Stat Points, forms & Mega Evolution, coverage | Live camera or gallery → classified by a vision LLM → jumps to the matching Pokémon |
+<p align="center">
+  <img src="docs/screenshots/pokedex.png" alt="Pokédex grid" width="19%">
+  <img src="docs/screenshots/detail.png" alt="Pokémon detail screen" width="19%">
+  <img src="docs/screenshots/teams-list.png" alt="Saved teams list" width="19%">
+  <img src="docs/screenshots/teams.png" alt="Team builder" width="19%">
+  <img src="docs/screenshots/identify.png" alt="Camera identification" width="19%">
+</p>
+
+<p align="center"><sub>Pokédex grid · Pokémon detail · Saved teams · Team builder · Camera identification</sub></p>
 
 ## Requirements
 
