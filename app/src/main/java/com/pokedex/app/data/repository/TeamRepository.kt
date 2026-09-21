@@ -1,6 +1,8 @@
 package com.pokedex.app.data.repository
 
 import com.pokedex.app.core.PokemonNames
+import com.pokedex.app.data.BackupException
+import com.pokedex.app.data.TeamBackup
 import com.pokedex.app.data.local.TeamDao
 import com.pokedex.app.data.local.TeamEntity
 import com.pokedex.app.data.local.TeamMemberEntity
@@ -12,6 +14,7 @@ import com.pokedex.app.domain.team.Team
 import com.pokedex.app.domain.team.TeamMember
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -25,6 +28,15 @@ interface TeamRepository {
     suspend fun deleteTeam(id: Long)
     suspend fun saveMembers(teamId: Long, members: List<TeamMember>)
     suspend fun swapTeams(id1: Long, id2: Long)
+
+    /** All saved teams as a backup file's JSON, in their on-screen order. */
+    suspend fun exportBackup(): String
+
+    /**
+     * Replaces every saved team with the backup's contents. Throws [BackupException] if the file is
+     * invalid, in which case nothing changes.
+     */
+    suspend fun importBackup(json: String)
 }
 
 @Singleton
@@ -61,6 +73,21 @@ class TeamRepositoryImpl @Inject constructor(
 
     override suspend fun swapTeams(id1: Long, id2: Long) = withContext(io) {
         dao.swapSortOrder(id1, id2)
+    }
+
+    override suspend fun exportBackup(): String = withContext(io) {
+        TeamBackup.toJson(dao.observeTeams().first().map { it.toDomain() })
+    }
+
+    override suspend fun importBackup(json: String) = withContext(io) {
+        val teams = TeamBackup.parse(json)
+        val now = System.currentTimeMillis()
+        dao.replaceAllTeams(
+            teams.mapIndexed { position, team ->
+                TeamEntity(name = team.name, updatedAt = now, sortOrder = position.toLong()) to
+                    team.members.map { it.toEntity(teamId = 0) }
+            },
+        )
     }
 }
 

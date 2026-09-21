@@ -71,7 +71,8 @@ Get a key at <https://console.anthropic.com/>. The classifier uses model
 * **Team builder** — six-slot teams under the **Pokémon Champions** ruleset:
   legal-species/item gating, Stat Points and Stat Alignments, swipeable forms and
   Mega Evolution, search by move, drag-to-reorder, copy a Pokémon between teams,
-  and per-Pokémon defensive/offensive type-coverage analysis. See
+  export/import your teams as a backup file, and per-Pokémon
+  defensive/offensive type-coverage analysis. See
   [Team builder](#team-builder).
 * **Camera identification** — point the camera at a Pokémon (card, plush,
   screenshot, drawing, costume…) or pick from the gallery; a vision LLM
@@ -114,6 +115,7 @@ app/
     classifier/  PokemonClassifier interface + AnthropicPokemonClassifier + ClassificationParser
     repository/  PokemonRepository / TeamRepository (+ Impls) — cache-first, stale-while-revalidate
     Mappers.kt   DTO → domain
+    TeamBackup.kt  Saved-teams JSON backup format + validating parser
   core/          Pure helpers: PokemonNames, PokemonForms, FlavorText, ImageScaling,
                  Sprites (PokéAPI URL builder), Resource
   di/            Hilt modules (Network, Database, App/Repository/Classifier bindings)
@@ -270,6 +272,17 @@ pure Kotlin under `domain/team/`:
   same way.
 * **Deleting a team** asks for confirmation first, since it removes every
   Pokémon in it and can't be undone.
+* **Backup & restore** — the Teams header's ⋮ menu exports every saved team to a
+  JSON file and imports one back, through the system file picker (no storage
+  permission needed), so teams survive an uninstall, a lost phone, or a new
+  device. The file (`TeamBackup.kt`) is versioned and stores gender, shiny and
+  form as their own fields rather than Room's packed `teraType` / `level`
+  columns, so it doesn't depend on that storage shortcut. Import validates the
+  whole file first — wrong app, newer version, bad slots, duplicate slots or species, Stat
+  Points over the limits — and only then replaces every saved team in one Room
+  transaction (`TeamDao.replaceAllTeams`), after a confirmation. A rejected file
+  changes nothing and says why. Only teams are backed up; the Pokédex cache is
+  re-fetched on demand.
 * **Enrichment races** — placing a Pokémon (or reloading a saved team) kicks
   off a network fetch to fill in its types/stats/abilities/forms; the user can
   keep editing, swapping slots, or replacing that Pokémon while it's still in
@@ -337,8 +350,14 @@ Unit (`./gradlew :app:testDebugUnitTest`):
 * `PokemonPickerVerificationTest` — leaving Move search for Name mode clears a
   cancelled search's "checking…" state and a failed search's error, rather than
   leaving either stuck on screen
+* `TeamBackupTest` — the backup format round-trips every persisted field and the
+  team order, tolerates missing optional fields and unknown keys, and rejects
+  non-backups, other apps' files, newer versions, bad or duplicate slots, duplicate species and
+  out-of-range Stat Points or moves
 * `TeamListViewModelTest` — `swapTeams` delegates to the repository, and is a
-  no-op for two equal ids
+  no-op for two equal ids; export writes the repository's JSON to the chosen
+  file, and import reports a restore, an invalid file (with the reason) or an
+  unreadable one without touching the repository
 
 Instrumented (`./gradlew :app:connectedDebugAndroidTest`):
 
@@ -350,6 +369,10 @@ Instrumented (`./gradlew :app:connectedDebugAndroidTest`):
   rather than collapsing both onto the same value, a real-SQLite regression
   test (see `TeamDao.swapSortOrder`'s doc comment for why a single `CASE`-based
   `UPDATE` can't be trusted to do this correctly)
+* `TeamBackupRoundTripTest` — against real Room: an exported backup restores
+  into a fresh database including the packed gender / shiny / form columns,
+  importing replaces the old teams and their members without orphans, and an
+  invalid file leaves existing teams untouched
 * `TeamsListScreenTest` — drives real Compose touch input (not a mock of the
   gesture) against the Teams list: a second drag on a row that already moved
   once uses its *current* position rather than the one its `pointerInput`

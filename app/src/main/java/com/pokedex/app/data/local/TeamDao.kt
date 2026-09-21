@@ -50,6 +50,20 @@ interface TeamDao {
         setSortOrder(id2, order1)
     }
 
+    /** Cascades to `team_member` through the foreign key. */
+    @Query("DELETE FROM team")
+    suspend fun deleteAllTeams()
+
+    /** Swaps every saved team for [teams] in one transaction, so a failure leaves the old data intact. */
+    @Transaction
+    suspend fun replaceAllTeams(teams: List<Pair<TeamEntity, List<TeamMemberEntity>>>) {
+        deleteAllTeams()
+        teams.forEach { (team, members) ->
+            val teamId = insertTeam(team)
+            if (members.isNotEmpty()) insertMembers(members.map { it.copy(teamId = teamId) })
+        }
+    }
+
     @Query("DELETE FROM team_member WHERE teamId = :teamId")
     suspend fun clearMembers(teamId: Long)
 

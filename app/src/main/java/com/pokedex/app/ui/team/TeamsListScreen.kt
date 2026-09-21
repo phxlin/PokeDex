@@ -2,6 +2,9 @@
 
 package com.pokedex.app.ui.team
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -22,21 +25,28 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,6 +54,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -66,11 +77,13 @@ import com.pokedex.app.domain.team.heldItemFallbackGlyph
 import com.pokedex.app.domain.team.heldItemSpriteUrl
 import com.pokedex.app.domain.team.megaPokemonSlugFor
 import com.pokedex.app.domain.team.megaSpriteFor
+import com.pokedex.app.ui.components.DexActionButton
 import com.pokedex.app.ui.components.PokedexHeader
 import com.pokedex.app.ui.components.SpriteImage
 import com.pokedex.app.ui.theme.DexAvatarWell
 import com.pokedex.app.ui.theme.DexCardInk
 import com.pokedex.app.ui.theme.DexRed
+import java.time.LocalDate
 import kotlin.math.roundToInt
 
 @Composable
@@ -82,11 +95,25 @@ fun TeamsListScreen(
 ) {
     val teams by viewModel.teams.collectAsStateWithLifecycle()
     val formSprites by viewModel.formSprites.collectAsStateWithLifecycle()
+    val message by viewModel.message.collectAsStateWithLifecycle()
     var teamPendingDelete by remember { mutableStateOf<Team?>(null) }
+    // rememberSaveable so the confirmation survives rotation while the file picker is open.
+    var pendingImport by rememberSaveable { mutableStateOf<Uri?>(null) }
+    val snackbarHost = remember { SnackbarHostState() }
+    val context = LocalContext.current
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(BACKUP_MIME)) { uri ->
+        if (uri != null) viewModel.exportBackup(context.contentResolver, uri)
+    }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) pendingImport = uri
+    }
+
+    ShowMessage(message, snackbarHost, onShown = viewModel::messageShown)
 
     Scaffold(
         modifier = modifier.background(MaterialTheme.colorScheme.background),
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHost) },
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { viewModel.createTeam(onOpenTeam) },
@@ -102,6 +129,12 @@ fun TeamsListScreen(
                 title = "Teams",
                 subtitle = "${teams.size} saved · Champions rules",
                 onHome = onHome,
+                actions = {
+                    BackupMenu(
+                        onExport = { exportLauncher.launch(backupFileName()) },
+                        onImport = { importLauncher.launch(arrayOf(BACKUP_MIME, "text/plain", "application/octet-stream")) },
+                    )
+                },
             )
 
             if (teams.isEmpty()) {
@@ -126,31 +159,97 @@ fun TeamsListScreen(
     }
 
     teamPendingDelete?.let { team ->
-        // Explicit colors: the default M3 dialog surface/text tokens are overridden
-        // app-wide for the Pokédex "screen" look (dark ink on a pale screen), which
-        // leaves the dialog's un-overridden elevated container dark — pairing that
-        // with our dark ink text reads as low-contrast. Match the white-panel style
-        // every sheet/picker in this app already uses instead (see SheetBg/SheetInk
-        // in Pickers.kt).
-        AlertDialog(
-            onDismissRequest = { teamPendingDelete = null },
-            containerColor = Color.White,
-            titleContentColor = DexCardInk,
-            textContentColor = DexCardInk,
-            title = { Text("Delete “${team.name}”?") },
-            text = { Text("This removes all ${team.members.size} Pokémon in it. This can't be undone.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.deleteTeam(team.id)
-                    teamPendingDelete = null
-                }) {
-                    Text("Delete", color = DexRed)
-                }
+        ConfirmDialog(
+            title = "Delete “${team.name}”?",
+            text = "This removes all ${team.members.size} Pokémon in it. This can't be undone.",
+            confirmLabel = "Delete",
+            onConfirm = {
+                viewModel.deleteTeam(team.id)
+                teamPendingDelete = null
             },
-            dismissButton = {
-                TextButton(onClick = { teamPendingDelete = null }) { Text("Cancel", color = DexCardInk) }
-            },
+            onDismiss = { teamPendingDelete = null },
         )
+    }
+    pendingImport?.let { uri ->
+        ConfirmDialog(
+            title = "Replace your teams?",
+            text = "Importing replaces all ${teams.size} saved teams on this device with the contents of the backup file.",
+            confirmLabel = "Replace",
+            onConfirm = {
+                pendingImport = null
+                viewModel.importBackup(context.contentResolver, uri)
+            },
+            onDismiss = { pendingImport = null },
+        )
+    }
+}
+
+private const val BACKUP_MIME = "application/json"
+
+/** Shows [message] once in the snackbar, then reports it as consumed. */
+@Composable
+private fun ShowMessage(message: String?, host: SnackbarHostState, onShown: () -> Unit) {
+    LaunchedEffect(message) {
+        if (message != null) {
+            host.showSnackbar(message)
+            onShown()
+        }
+    }
+}
+
+private fun backupFileName() = "pokedex-teams-${LocalDate.now()}.json"
+
+/**
+ * Explicit colors: the default M3 dialog surface/text tokens are overridden app-wide for the
+ * Pokédex "screen" look (dark ink on a pale screen), which leaves the dialog's un-overridden
+ * elevated container dark — pairing that with our dark ink text reads as low-contrast. Match
+ * the white-panel style every sheet/picker in this app already uses instead (see
+ * SheetBg/SheetInk in Pickers.kt).
+ */
+@Composable
+private fun ConfirmDialog(
+    title: String,
+    text: String,
+    confirmLabel: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color.White,
+        titleContentColor = DexCardInk,
+        textContentColor = DexCardInk,
+        title = { Text(title) },
+        text = { Text(text) },
+        confirmButton = { TextButton(onClick = onConfirm) { Text(confirmLabel, color = DexRed) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = DexCardInk) } },
+    )
+}
+
+/** Header overflow menu: save the teams to a file, or restore them from one. */
+@Composable
+private fun BackupMenu(onExport: () -> Unit, onImport: () -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        DexActionButton(onClick = { expanded = true }, contentDescription = "Backup and restore") {
+            Icon(Icons.Default.MoreVert, contentDescription = null, tint = DexRed)
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, containerColor = Color.White) {
+            DropdownMenuItem(
+                text = { Text("Export backup", color = DexCardInk) },
+                onClick = {
+                    expanded = false
+                    onExport()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Import backup", color = DexCardInk) },
+                onClick = {
+                    expanded = false
+                    onImport()
+                },
+            )
+        }
     }
 }
 

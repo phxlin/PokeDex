@@ -1,11 +1,16 @@
 package com.pokedex.app.ui.team
 
+import android.content.ContentResolver
+import android.database.SQLException
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.pokedex.app.data.BackupException
 import com.pokedex.app.data.repository.PokemonRepository
 import com.pokedex.app.data.repository.TeamRepository
 import com.pokedex.app.domain.team.Team
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -14,13 +19,25 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.IOException
 import javax.inject.Inject
 
 @HiltViewModel
 class TeamListViewModel @Inject constructor(
     private val repository: TeamRepository,
     private val pokeRepo: PokemonRepository,
+    private val io: CoroutineDispatcher,
 ) : ViewModel() {
+
+    private val _message = MutableStateFlow<String?>(null)
+
+    /** One-shot result of the last backup export/import, for a snackbar. Cleared by [messageShown]. */
+    val message: StateFlow<String?> = _message.asStateFlow()
+
+    fun messageShown() {
+        _message.value = null
+    }
 
     /** "<form-slug>|<shiny>" -> that form's front sprite URL, resolved lazily for forms shown on the list. */
     private val _formSprites = MutableStateFlow<Map<String, String>>(emptyMap())
@@ -73,6 +90,43 @@ class TeamListViewModel @Inject constructor(
     fun swapTeams(id1: Long, id2: Long) {
         if (id1 == id2) return
         viewModelScope.launch { repository.swapTeams(id1, id2) }
+    }
+
+    /** Writes every saved team as a backup file to [uri] (from the system "create document" picker). */
+    fun exportBackup(resolver: ContentResolver, uri: Uri) {
+        viewModelScope.launch {
+            _message.value = try {
+                val json = repository.exportBackup()
+                withContext(io) {
+                    resolver.openOutputStream(uri, "wt")?.use { it.write(json.toByteArray(Charsets.UTF_8)) }
+                        ?: throw IOException("Couldn't open the file")
+                }
+                "Backup saved."
+            } catch (e: IOException) {
+                "Couldn't save the backup."
+            }
+        }
+    }
+
+    /** Replaces every saved team with the backup file at [uri]. An invalid file changes nothing. */
+    fun importBackup(resolver: ContentResolver, uri: Uri) {
+        viewModelScope.launch {
+            _message.value = try {
+                val json = withContext(io) {
+                    resolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                        ?: throw IOException("Couldn't open the file")
+                }
+                repository.importBackup(json)
+                "Backup restored."
+            } catch (e: BackupException) {
+                "Not restored: ${e.message}"
+            } catch (e: IOException) {
+                "Couldn't read that file."
+            } catch (e: SQLException) {
+                // The whole replace runs in one transaction, so the old teams are still there.
+                "Couldn't restore the backup."
+            }
+        }
     }
 }
 

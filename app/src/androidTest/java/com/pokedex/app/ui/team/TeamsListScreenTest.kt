@@ -11,6 +11,7 @@ import com.pokedex.app.FakePokemonRepository
 import com.pokedex.app.FakeTeamRepository
 import com.pokedex.app.domain.team.Team
 import com.pokedex.app.ui.theme.PokeDexTheme
+import kotlinx.coroutines.Dispatchers
 import org.junit.Rule
 import org.junit.Test
 
@@ -29,7 +30,7 @@ class TeamsListScreenTest {
 
     private fun setContent(teams: List<Team>): FakeTeamRepository {
         val repo = FakeTeamRepository(teams)
-        val viewModel = TeamListViewModel(repo, FakePokemonRepository(emptyList()))
+        val viewModel = TeamListViewModel(repo, FakePokemonRepository(emptyList()), Dispatchers.IO)
         composeRule.setContent {
             PokeDexTheme {
                 TeamsListScreen(onOpenTeam = {}, viewModel = viewModel)
