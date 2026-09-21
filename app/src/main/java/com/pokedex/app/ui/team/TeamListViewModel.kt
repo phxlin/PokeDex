@@ -93,7 +93,7 @@ class TeamListViewModel @Inject constructor(
             _message.value = try {
                 repository.deleteAllTeams()
                 "All teams deleted."
-            } catch (e: SQLException) {
+            } catch (_: SQLException) {
                 "Couldn't delete your teams."
             }
         }
@@ -115,7 +115,7 @@ class TeamListViewModel @Inject constructor(
                         ?: throw IOException("Couldn't open the file")
                 }
                 "Backup saved."
-            } catch (e: IOException) {
+            } catch (_: IOException) {
                 "Couldn't save the backup."
             }
         }
@@ -133,9 +133,9 @@ class TeamListViewModel @Inject constructor(
                 "Backup restored."
             } catch (e: BackupException) {
                 "Not restored: ${e.message}"
-            } catch (e: IOException) {
+            } catch (_: IOException) {
                 "Couldn't read that file."
-            } catch (e: SQLException) {
+            } catch (_: SQLException) {
                 // The whole replace runs in one transaction, so the old teams are still there.
                 "Couldn't restore the backup."
             }

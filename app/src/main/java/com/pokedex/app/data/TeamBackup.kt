@@ -71,7 +71,7 @@ object TeamBackup {
         while (true) {
             val n = source.read(buffer)
             if (n < 0) break
-            text.append(buffer, 0, n)
+            text.appendRange(buffer, 0, n)
             if (text.length > MAX_CHARS) invalid("This file is too large to be a PokéDex backup.")
         }
         return text.toString()
@@ -98,7 +98,7 @@ object TeamBackup {
     fun parse(json: String): List<Team> {
         val file = try {
             reader.decodeFromString(BackupFile.serializer(), json)
-        } catch (e: IllegalArgumentException) {
+        } catch (_: IllegalArgumentException) {
             // SerializationException is an IllegalArgumentException, so this covers bad syntax,
             // wrong field types and an empty file alike.
             invalid("This file isn't a valid backup.")
