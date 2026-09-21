@@ -313,6 +313,24 @@ from the disposable Pokédex cache. The Teams list is ordered by `team.sortOrder
 (manual, set by drag-reordering; a new team is placed first), not by last-edited
 time, so editing a team never moves it. See "Known limitations" below.
 
+### Camera identification
+
+1. CameraX (`LifecycleCameraController`) live preview + capture, or pick from the
+   gallery. `CAMERA` is requested at runtime with a rationale screen and a
+   graceful permanently-denied path ("Open settings").
+2. The image is downscaled to ≤ 1024 px on the long edge, re-encoded as JPEG,
+   base64-encoded (`core/ImageScaling.kt`).
+3. `PokemonClassifier` (interface — swap in an on-device TFLite model later) sends
+   it to `claude-sonnet-4-6` as a base64 image block with a strict
+   JSON-only system prompt.
+4. `ClassificationParser` extracts the first balanced `{…}` object even through
+   code fences / prose, and tolerates malformed or wrongly-typed fields.
+5. If it's a Pokémon with confidence ≥ 0.5, the name is normalized
+   (`PokemonNames`: `Mr. Mime` → `mr-mime`, `Nidoran♀` → `nidoran-f`, `Flabébé` →
+   `flabebe`), resolved to a Dex id, and the detail screen opens with an
+   "Identified: … (NN% confident)" banner. Otherwise the result screen shows a
+   friendly "that's not a Pokémon" card with the model's reason and a Try again.
+
 ### Backup & restore
 
 The Teams header's ⋮ menu has *Export backup*, *Import backup* and *Delete all
@@ -347,24 +365,6 @@ needed), so the file can go to Drive, email, or another device. It is named
   file is plain, unencrypted JSON. `allowBackup` is on, so Android's own cloud
   backup and device transfer also carry `pokedex.db`, but that depends on the
   phone's settings and isn't a substitute for an exported file.
-
-### Camera identification
-
-1. CameraX (`LifecycleCameraController`) live preview + capture, or pick from the
-   gallery. `CAMERA` is requested at runtime with a rationale screen and a
-   graceful permanently-denied path ("Open settings").
-2. The image is downscaled to ≤ 1024 px on the long edge, re-encoded as JPEG,
-   base64-encoded (`core/ImageScaling.kt`).
-3. `PokemonClassifier` (interface — swap in an on-device TFLite model later) sends
-   it to `claude-sonnet-4-6` as a base64 image block with a strict
-   JSON-only system prompt.
-4. `ClassificationParser` extracts the first balanced `{…}` object even through
-   code fences / prose, and tolerates malformed or wrongly-typed fields.
-5. If it's a Pokémon with confidence ≥ 0.5, the name is normalized
-   (`PokemonNames`: `Mr. Mime` → `mr-mime`, `Nidoran♀` → `nidoran-f`, `Flabébé` →
-   `flabebe`), resolved to a Dex id, and the detail screen opens with an
-   "Identified: … (NN% confident)" banner. Otherwise the result screen shows a
-   friendly "that's not a Pokémon" card with the model's reason and a Try again.
 
 ## Theming
 
