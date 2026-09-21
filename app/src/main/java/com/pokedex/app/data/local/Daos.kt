@@ -35,7 +35,7 @@ interface RawCacheDao {
 
 @Dao
 interface MetaDao {
-    @Query("SELECT value FROM meta WHERE key = :key LIMIT 1")
+    @Query("SELECT value FROM meta WHERE `key` = :key LIMIT 1")
     suspend fun get(key: String): String?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
