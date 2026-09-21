@@ -130,7 +130,10 @@ fun TeamsListScreen(
             )
         },
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
+        // Only the bottom padding from the Scaffold: PokedexHeader already insets for the status
+        // bar and paints behind it, like the other tabs' headers, so applying the top padding too
+        // left a blank band above it.
+        Column(Modifier.fillMaxSize().padding(bottom = padding.calculateBottomPadding())) {
             PokedexHeader(
                 title = "Teams",
                 subtitle = "${teams.size} saved · Champions rules",
