@@ -9,10 +9,29 @@ with a vision LLM.
 Three bottom-nav tabs — **Pokédex**, **Teams**, **Identify** — swipeable as well
 as tappable:
 
-| Pokédex                                                                                            | Detail                                                                                  | Teams                                                                                             | Team builder                                                                                                                                                             | Identify                                                                    |
-| -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
-| <img src="docs/screenshots/pokedex.png" alt="Pokédex grid" width="160">                            | <img src="docs/screenshots/detail.png" alt="Detail screen" width="160">                 | <img src="docs/screenshots/teams-list.png" alt="Teams list" width="160">                          | <img src="docs/screenshots/teams.png" alt="Team builder" width="160">                                                                                                    | <img src="docs/screenshots/identify.png" alt="Identify screen" width="160"> |
-| Scrollable grid of every Pokémon with instant name/number search, type/generation filters and sort | Artwork, sprites, lore, stats, abilities, evolutions, swipeable form tabs, cry playback | Saved teams at a glance, drag to reorder, and export / import / delete-all backup from the ⋮ menu | Six-slot team builder: legal-species/item gating, Stat Points, Stat Alignments, swipeable forms & Mega Evolution, per-Pokémon defensive/offensive type-coverage analysis | Live camera or gallery → classified → jumps to the match                    |
+<table>
+  <tr>
+    <th width="20%">Pokédex</th>
+    <th width="20%">Detail</th>
+    <th width="20%">Teams</th>
+    <th width="20%">Team builder</th>
+    <th width="20%">Identify</th>
+  </tr>
+  <tr>
+    <td valign="top"><img src="docs/screenshots/pokedex.png" alt="Pokédex grid" width="100%"></td>
+    <td valign="top"><img src="docs/screenshots/detail.png" alt="Detail screen" width="100%"></td>
+    <td valign="top"><img src="docs/screenshots/teams-list.png" alt="Teams list" width="100%"></td>
+    <td valign="top"><img src="docs/screenshots/teams.png" alt="Team builder" width="100%"></td>
+    <td valign="top"><img src="docs/screenshots/identify.png" alt="Identify screen" width="100%"></td>
+  </tr>
+  <tr>
+    <td valign="top">Scrollable grid of every Pokémon with instant name/number search, type/generation filters and sort</td>
+    <td valign="top">Artwork, sprites, lore, stats, abilities, evolutions, swipeable form tabs, cry playback</td>
+    <td valign="top">Saved teams at a glance, drag to reorder, and export / import / delete-all backup from the ⋮ menu</td>
+    <td valign="top">Six-slot team builder: legal-species/item gating, Stat Points, Stat Alignments, swipeable forms &amp; Mega Evolution, per-Pokémon defensive/offensive type-coverage analysis</td>
+    <td valign="top">Live camera or gallery → classified → jumps to the match</td>
+  </tr>
+</table>
 
 ## Requirements
 
