@@ -35,11 +35,15 @@ fun keystoreProperty(name: String): String =
 
 android {
     namespace = "com.pokedex.app"
+    // Staying on API 35 deliberately: AGP 8.13 tops out at 36, and moving targetSdk brings in
+    // the newer Android's behaviour changes, which want their own testing pass.
+    //noinspection GradleDependency
     compileSdk = 35
 
     defaultConfig {
         applicationId = "com.pokedex.app"
         minSdk = 26
+        //noinspection OldTargetApi
         targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
