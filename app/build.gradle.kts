@@ -22,6 +22,17 @@ val anthropicApiKey: String = (localProperties.getProperty("ANTHROPIC_API_KEY")
     ?: System.getenv("ANTHROPIC_API_KEY")
     ?: "").trim()
 
+// Optional release signing. If keystore.properties exists (git-ignored; copy
+// keystore.properties.example), release builds are signed with that key. Without
+// it they fall back to the debug key, so a fresh clone still builds and installs.
+val keystoreFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties().apply {
+    if (keystoreFile.exists()) keystoreFile.inputStream().use { load(it) }
+}
+fun keystoreProperty(name: String): String =
+    keystoreProperties.getProperty(name)?.takeIf { it.isNotBlank() }
+        ?: throw GradleException("keystore.properties is missing \"$name\" (see keystore.properties.example)")
+
 android {
     namespace = "com.pokedex.app"
     compileSdk = 35
@@ -40,6 +51,17 @@ android {
         buildConfigField("String", "ANTHROPIC_BASE_URL", "\"https://api.anthropic.com/v1/\"")
     }
 
+    signingConfigs {
+        if (keystoreFile.exists()) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProperty("storeFile"))
+                storePassword = keystoreProperty("storePassword")
+                keyAlias = keystoreProperty("keyAlias")
+                keyPassword = keystoreProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
@@ -51,11 +73,12 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            // This app isn't published to Play, so signing release (and the
-            // baseline-profile plugin's nonMinifiedRelease / benchmarkRelease
-            // variants derived from it) with the debug key is fine and lets
-            // `assembleRelease` / `generateBaselineProfile` install on a device.
-            signingConfig = signingConfigs.getByName("debug")
+            // Signed with keystore.properties' key when that file exists; otherwise with the
+            // debug key, which is fine because this app isn't published to Play and it lets
+            // `assembleRelease` / `generateBaselineProfile` (and the baseline-profile plugin's
+            // nonMinifiedRelease / benchmarkRelease variants derived from release) install on
+            // a device from a fresh clone.
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 

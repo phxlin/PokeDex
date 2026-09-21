@@ -37,6 +37,9 @@ interface TeamRepository {
      * invalid, in which case nothing changes.
      */
     suspend fun importBackup(json: String)
+
+    /** Deletes every saved team and its Pokémon in one transaction. */
+    suspend fun deleteAllTeams()
 }
 
 @Singleton
@@ -89,6 +92,9 @@ class TeamRepositoryImpl @Inject constructor(
             },
         )
     }
+
+    // team_member rows go with their team (ON DELETE CASCADE).
+    override suspend fun deleteAllTeams() = withContext(io) { dao.deleteAllTeams() }
 }
 
 private fun TeamWithMembers.toDomain() = Team(

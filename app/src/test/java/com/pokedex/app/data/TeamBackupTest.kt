@@ -8,6 +8,7 @@ import com.pokedex.app.domain.team.Team
 import com.pokedex.app.domain.team.TeamMember
 import org.junit.Assert.fail
 import org.junit.Test
+import java.io.StringReader
 import java.time.Instant
 
 class TeamBackupTest {
@@ -15,9 +16,12 @@ class TeamBackupTest {
     private fun member(slot: Int, speciesId: Int, name: String, block: (TeamMember) -> TeamMember = { it }) =
         block(TeamMember(slot = slot, speciesId = speciesId, speciesName = name, displayName = name))
 
-    private fun assertRejected(json: String, messagePart: String) {
+    private fun assertRejected(json: String, messagePart: String) =
+        assertRejected(messagePart) { TeamBackup.parse(json) }
+
+    private fun assertRejected(messagePart: String, action: () -> Unit) {
         try {
-            TeamBackup.parse(json)
+            action()
             fail("expected BackupException")
         } catch (e: BackupException) {
             assertThat(e.message).contains(messagePart)
@@ -139,6 +143,18 @@ class TeamBackupTest {
             ]}]""",
         )
         assertRejected(json, "species")
+    }
+
+    @Test
+    fun `a file over the size limit is rejected without being read to the end`() {
+        assertRejected("too large") { TeamBackup.readBounded(StringReader("x".repeat(TeamBackup.MAX_CHARS + 1))) }
+    }
+
+    @Test
+    fun `a file exactly at the size limit is read in full`() {
+        val text = "x".repeat(TeamBackup.MAX_CHARS)
+
+        assertThat(TeamBackup.readBounded(StringReader(text))).hasLength(TeamBackup.MAX_CHARS)
     }
 
     @Test

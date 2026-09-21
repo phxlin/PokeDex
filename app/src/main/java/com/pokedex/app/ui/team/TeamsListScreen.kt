@@ -33,7 +33,10 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -63,7 +66,9 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.onClick as semanticsOnClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -99,6 +104,7 @@ fun TeamsListScreen(
     var teamPendingDelete by remember { mutableStateOf<Team?>(null) }
     // rememberSaveable so the confirmation survives rotation while the file picker is open.
     var pendingImport by rememberSaveable { mutableStateOf<Uri?>(null) }
+    var confirmDeleteAll by rememberSaveable { mutableStateOf(false) }
     val snackbarHost = remember { SnackbarHostState() }
     val context = LocalContext.current
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(BACKUP_MIME)) { uri ->
@@ -133,19 +139,14 @@ fun TeamsListScreen(
                     BackupMenu(
                         onExport = { exportLauncher.launch(backupFileName()) },
                         onImport = { importLauncher.launch(arrayOf(BACKUP_MIME, "text/plain", "application/octet-stream")) },
+                        canDeleteAll = teams.isNotEmpty(),
+                        onDeleteAll = { confirmDeleteAll = true },
                     )
                 },
             )
 
             if (teams.isEmpty()) {
-                Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                    Text(
-                        "No teams yet.\nTap “New team” to build one.",
-                        color = Color.White,
-                        style = MaterialTheme.typography.bodyLarge,
-                        textAlign = TextAlign.Center,
-                    )
-                }
+                NoTeamsYet()
             } else {
                 TeamsList(
                     teams = teams,
@@ -159,10 +160,8 @@ fun TeamsListScreen(
     }
 
     teamPendingDelete?.let { team ->
-        ConfirmDialog(
-            title = "Delete “${team.name}”?",
-            text = "This removes all ${team.members.size} Pokémon in it. This can't be undone.",
-            confirmLabel = "Delete",
+        DeleteTeamDialog(
+            team = team,
             onConfirm = {
                 viewModel.deleteTeam(team.id)
                 teamPendingDelete = null
@@ -171,10 +170,8 @@ fun TeamsListScreen(
         )
     }
     pendingImport?.let { uri ->
-        ConfirmDialog(
-            title = "Replace your teams?",
-            text = "Importing replaces all ${teams.size} saved teams on this device with the contents of the backup file.",
-            confirmLabel = "Replace",
+        ReplaceTeamsDialog(
+            teamCount = teams.size,
             onConfirm = {
                 pendingImport = null
                 viewModel.importBackup(context.contentResolver, uri)
@@ -182,9 +179,69 @@ fun TeamsListScreen(
             onDismiss = { pendingImport = null },
         )
     }
+    if (confirmDeleteAll) {
+        DeleteAllDialog(
+            teamCount = teams.size,
+            onConfirm = {
+                confirmDeleteAll = false
+                viewModel.deleteAllTeams()
+            },
+            onDismiss = { confirmDeleteAll = false },
+        )
+    }
 }
 
 private const val BACKUP_MIME = "application/json"
+
+@Composable
+private fun NoTeamsYet() {
+    Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+        Text(
+            "No teams yet.\nTap “New team” to build one.",
+            color = Color.White,
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+private fun savedTeams(count: Int) = if (count == 1) "1 saved team" else "$count saved teams"
+
+@Composable
+private fun DeleteTeamDialog(team: Team, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    ConfirmDialog(
+        title = "Delete “${team.name}”?",
+        text = "This removes all ${team.members.size} Pokémon in it. This can't be undone.",
+        confirmLabel = "Delete",
+        onConfirm = onConfirm,
+        onDismiss = onDismiss,
+    )
+}
+
+@Composable
+private fun ReplaceTeamsDialog(teamCount: Int, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    ConfirmDialog(
+        title = "Replace your teams?",
+        text = "Importing replaces your ${savedTeams(teamCount)} on this device with the contents of the backup file.",
+        confirmLabel = "Replace",
+        onConfirm = onConfirm,
+        onDismiss = onDismiss,
+    )
+}
+
+/** Deleting everything can't be undone, so the user has to type [DELETE_CONFIRM_PHRASE] first. */
+@Composable
+private fun DeleteAllDialog(teamCount: Int, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    ConfirmDialog(
+        title = "Delete all data?",
+        text = "Your ${savedTeams(teamCount)} on this device will be permanently removed. " +
+            "Export a backup first if you might want ${if (teamCount == 1) "it" else "them"} back.",
+        confirmLabel = "Delete everything",
+        confirmPhrase = DELETE_CONFIRM_PHRASE,
+        onConfirm = onConfirm,
+        onDismiss = onDismiss,
+    )
+}
 
 /** Shows [message] once in the snackbar, then reports it as consumed. */
 @Composable
@@ -197,7 +254,7 @@ private fun ShowMessage(message: String?, host: SnackbarHostState, onShown: () -
     }
 }
 
-private fun backupFileName() = "pokedex-teams-${LocalDate.now()}.json"
+private fun backupFileName() = "pokedex-backup-${LocalDate.now()}.json"
 
 /**
  * Explicit colors: the default M3 dialog surface/text tokens are overridden app-wide for the
@@ -205,6 +262,9 @@ private fun backupFileName() = "pokedex-teams-${LocalDate.now()}.json"
  * elevated container dark — pairing that with our dark ink text reads as low-contrast. Match
  * the white-panel style every sheet/picker in this app already uses instead (see
  * SheetBg/SheetInk in Pickers.kt).
+ *
+ * With a [confirmPhrase] the confirm button stays disabled until that word has been typed, for
+ * actions that can't be undone.
  */
 @Composable
 private fun ConfirmDialog(
@@ -213,25 +273,63 @@ private fun ConfirmDialog(
     confirmLabel: String,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
+    confirmPhrase: String? = null,
 ) {
+    // Local to the dialog, so it starts empty every time the dialog is opened.
+    var typed by rememberSaveable { mutableStateOf("") }
+    val confirmed = confirmPhrase == null || matchesConfirmPhrase(typed, confirmPhrase)
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Color.White,
         titleContentColor = DexCardInk,
         textContentColor = DexCardInk,
         title = { Text(title) },
-        text = { Text(text) },
-        confirmButton = { TextButton(onClick = onConfirm) { Text(confirmLabel, color = DexRed) } },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(text)
+                if (confirmPhrase != null) PhraseField(typed, { typed = it }, confirmPhrase)
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                enabled = confirmed,
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = DexRed,
+                    disabledContentColor = DexCardInk.copy(alpha = 0.38f),
+                ),
+            ) { Text(confirmLabel) }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", color = DexCardInk) } },
     )
 }
 
-/** Header overflow menu: save the teams to a file, or restore them from one. */
 @Composable
-private fun BackupMenu(onExport: () -> Unit, onImport: () -> Unit) {
+private fun PhraseField(value: String, onValueChange: (String) -> Unit, phrase: String) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text("Type $phrase to confirm") },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedTextColor = DexCardInk,
+            unfocusedTextColor = DexCardInk,
+            cursorColor = DexRed,
+            focusedBorderColor = DexRed,
+            unfocusedBorderColor = DexCardInk.copy(alpha = 0.5f),
+            focusedLabelColor = DexRed,
+            unfocusedLabelColor = DexCardInk.copy(alpha = 0.7f),
+        ),
+    )
+}
+
+/** Header overflow menu: save the teams to a file, restore them from one, or delete them all. */
+@Composable
+private fun BackupMenu(onExport: () -> Unit, onImport: () -> Unit, canDeleteAll: Boolean, onDeleteAll: () -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        DexActionButton(onClick = { expanded = true }, contentDescription = "Backup and restore") {
+        DexActionButton(onClick = { expanded = true }, contentDescription = "Backup, restore and delete") {
             Icon(Icons.Default.MoreVert, contentDescription = null, tint = DexRed)
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, containerColor = Color.White) {
@@ -247,6 +345,14 @@ private fun BackupMenu(onExport: () -> Unit, onImport: () -> Unit) {
                 onClick = {
                     expanded = false
                     onImport()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Delete all data", color = if (canDeleteAll) DexRed else DexCardInk.copy(alpha = 0.38f)) },
+                enabled = canDeleteAll,
+                onClick = {
+                    expanded = false
+                    onDeleteAll()
                 },
             )
         }

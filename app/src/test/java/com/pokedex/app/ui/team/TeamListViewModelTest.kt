@@ -1,10 +1,12 @@
 package com.pokedex.app.ui.team
 
 import android.content.ContentResolver
+import android.database.SQLException
 import android.net.Uri
 import androidx.lifecycle.viewModelScope
 import com.google.common.truth.Truth.assertThat
 import com.pokedex.app.data.BackupException
+import com.pokedex.app.data.TeamBackup
 import com.pokedex.app.data.repository.PokemonRepository
 import com.pokedex.app.data.repository.TeamRepository
 import io.mockk.coEvery
@@ -61,6 +63,40 @@ class TeamListViewModelTest {
             runCurrent()
 
             coVerify(exactly = 0) { teams.swapTeams(any(), any()) }
+        } finally {
+            vm.viewModelScope.cancel()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `deleteAllTeams asks the repository to delete everything and says so`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val teams = mockk<TeamRepository>(relaxed = true)
+        val vm = create(teams)
+        try {
+            vm.deleteAllTeams()
+            runCurrent()
+
+            coVerify(exactly = 1) { teams.deleteAllTeams() }
+            assertThat(vm.message.value).isEqualTo("All teams deleted.")
+        } finally {
+            vm.viewModelScope.cancel()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `deleteAllTeams reports a database failure instead of crashing`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val teams = mockk<TeamRepository>(relaxed = true)
+        coEvery { teams.deleteAllTeams() } throws SQLException("disk full")
+        val vm = create(teams)
+        try {
+            vm.deleteAllTeams()
+            runCurrent()
+
+            assertThat(vm.message.value).isEqualTo("Couldn't delete your teams.")
         } finally {
             vm.viewModelScope.cancel()
             Dispatchers.resetMain()
@@ -141,6 +177,26 @@ class TeamListViewModelTest {
             runCurrent()
 
             assertThat(vm.message.value).isEqualTo("Not restored: This file isn't a valid backup.")
+        } finally {
+            vm.viewModelScope.cancel()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `importBackup refuses an oversized file without touching the repository`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val teams = mockk<TeamRepository>(relaxed = true)
+        val uri = mockk<Uri>()
+        val huge = ByteArray(TeamBackup.MAX_CHARS + 1) { 'x'.code.toByte() }
+        val resolver = mockk<ContentResolver> { every { openInputStream(uri) } returns ByteArrayInputStream(huge) }
+        val vm = create(teams)
+        try {
+            vm.importBackup(resolver, uri)
+            runCurrent()
+
+            coVerify(exactly = 0) { teams.importBackup(any()) }
+            assertThat(vm.message.value).isEqualTo("Not restored: This file is too large to be a PokéDex backup.")
         } finally {
             vm.viewModelScope.cancel()
             Dispatchers.resetMain()

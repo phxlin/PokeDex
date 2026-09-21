@@ -13,3 +13,8 @@ local.properties
 /app/build/
 /app/release/
 /baselineprofile/build/
+
+# Release signing (see keystore.properties.example)
+keystore.properties
+*.jks
+*.keystore

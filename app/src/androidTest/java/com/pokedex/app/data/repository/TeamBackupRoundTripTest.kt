@@ -117,6 +117,17 @@ class TeamBackupRoundTripTest {
     }
 
     @Test
+    fun deleteAllTeamsRemovesEveryTeamAndItsMembers() = runTest {
+        targetRepo.saveMembers(targetRepo.createTeam("One"), listOf(ninetales()))
+        targetRepo.saveMembers(targetRepo.createTeam("Two"), listOf(ninetales().copy(slot = 0)))
+
+        targetRepo.deleteAllTeams()
+
+        assertThat(targetRepo.observeTeams().first()).isEmpty()
+        assertThat(memberCount(target)).isEqualTo(0)
+    }
+
+    @Test
     fun restoringAnEmptyBackupClearsEverything() = runTest {
         targetRepo.saveMembers(targetRepo.createTeam("Gone"), listOf(ninetales()))
 

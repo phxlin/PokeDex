@@ -2,8 +2,15 @@ package com.pokedex.app.ui.team
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeUp
 import com.google.common.truth.Truth.assertThat
@@ -86,5 +93,50 @@ class TeamsListScreenTest {
 
         composeRule.onNodeWithTag("team_row_15").assertIsDisplayed()
         assertThat(repo.swapCount).isEqualTo(0)
+    }
+
+    private fun openDeleteAllDialog() {
+        composeRule.onNodeWithContentDescription("Backup, restore and delete").performClick()
+        composeRule.onNodeWithText("Delete all data").performClick()
+        composeRule.onNodeWithText("Delete all data?").assertIsDisplayed()
+    }
+
+    @Test
+    fun deleteAllDataStaysDisabledUntilDELETEIsTypedThenRemovesEveryTeam() {
+        val repo = setContent(listOf(team(1, "Rain"), team(2, "Sun")))
+        openDeleteAllDialog()
+
+        composeRule.onNodeWithText("Delete everything").assertIsNotEnabled()
+        composeRule.onNode(hasSetTextAction()).performTextInput("DELET")
+        composeRule.onNodeWithText("Delete everything").assertIsNotEnabled()
+        composeRule.onNode(hasSetTextAction()).performTextInput("E")
+        composeRule.onNodeWithText("Delete everything").assertIsEnabled()
+        assertThat(repo.current).hasSize(2)
+
+        composeRule.onNodeWithText("Delete everything").performClick()
+        composeRule.waitUntil(timeoutMillis = 5_000) { repo.current.isEmpty() }
+
+        composeRule.onNodeWithText("Delete all data?").assertDoesNotExist()
+    }
+
+    @Test
+    fun cancellingTheDeleteAllDialogKeepsTheTeams() {
+        val repo = setContent(listOf(team(1, "Rain")))
+        openDeleteAllDialog()
+
+        composeRule.onNode(hasSetTextAction()).performTextInput("DELETE")
+        composeRule.onNodeWithText("Cancel").performClick()
+
+        composeRule.onNodeWithText("Delete all data?").assertDoesNotExist()
+        assertThat(repo.current).hasSize(1)
+    }
+
+    @Test
+    fun deleteAllDataIsDisabledWhenThereAreNoTeams() {
+        setContent(emptyList())
+
+        composeRule.onNodeWithContentDescription("Backup, restore and delete").performClick()
+
+        composeRule.onNodeWithText("Delete all data").assertIsNotEnabled()
     }
 }

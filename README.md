@@ -16,10 +16,13 @@ as tappable:
 
 ## Requirements
 
-* Android Studio Ladybug or newer
-* JDK 17+ (pin `org.gradle.java.home` in your user-level `~/.gradle/gradle.properties`
-  if Gradle doesn't already find a suitable JDK — don't add it to the project's
-  `gradle.properties`, since that path is machine-specific)
+* A recent Android Studio (one that supports AGP 8.13)
+* JDK 17–21 — set it as Android Studio's Gradle JVM (*Settings → Build Tools →
+  Gradle → Gradle JVM*), or via `JAVA_HOME` for the command line. Gradle 8.13
+  doesn't support the JDK 25 that recent Android Studio bundles. To pin one, put
+  `org.gradle.java.home=<path>` in your user-level `~/.gradle/gradle.properties`
+  — not in the project's `gradle.properties`, since that path is
+  machine-specific
 * Android SDK with API 35 installed
 * Runs on **Android 8.0 (API 26)** and up; compiled and targeted against **API 35**
 
@@ -40,10 +43,17 @@ as tappable:
    ./gradlew :app:assembleDebug        # build the APK
    ./gradlew :app:installDebug         # install on a running device/emulator
    ./gradlew :app:testDebugUnitTest    # unit tests
-   ./gradlew :app:connectedDebugAndroidTest   # instrumented + Compose UI tests
+   ./gradlew :app:connectedDebugAndroidTest   # instrumented + Compose UI tests (needs a device)
+   ./gradlew :app:lintDebug            # Android lint
    ./gradlew :app:detekt               # static analysis (baseline in config/detekt/)
    ./gradlew :app:generateBaselineProfile     # regenerate the startup profile (needs a device)
    ```
+
+   Run the instrumented tests on an emulator, not a phone with data you care
+   about: Android's test runner uninstalls the app afterwards, which also removes
+   its data. With several devices attached, pin the target with
+   `ANDROID_SERIAL=<emulator-id>`. Debug builds install as `com.pokedex.app.debug`,
+   so they sit next to a release build instead of replacing it.
 
 ### Where the API key goes
 
@@ -61,6 +71,22 @@ The camera-identification feature calls the **Anthropic Messages API**. The key 
 Get a key at <https://console.anthropic.com/>. The classifier uses model
 `claude-sonnet-4-6` (see `AnthropicPokemonClassifier.MODEL`).
 
+### First run
+
+1. The first launch needs a network connection: the Pokédex grid and every detail
+   page are fetched from PokeAPI and cached in Room, so after that it browses
+   offline. Search by name or number, or filter by type and generation.
+2. Open the **Teams** tab → **New team**, then tap an empty slot to add a Pokémon.
+   Only species and items legal under the Champions ruleset are offered. Long-press
+   and drag to rearrange Pokémon within a team, or teams in the list.
+3. Tap a filled slot to set its ability, nature, item, Stat Points and moves; the
+   coverage analysis under the grid updates as you go.
+4. Export a backup from the ⋮ menu on the Teams header so the teams survive an
+   uninstall or a new phone. The same menu has *Delete all data* (you'll be asked
+   to type `DELETE`).
+5. Optional: add an `ANTHROPIC_API_KEY` (see above) to use the **Identify** tab.
+   Without one the rest of the app works and Identify explains what's missing.
+
 ## Features
 
 * **Pokédex** — scrollable grid of every Pokémon with instant name/number search,
@@ -71,9 +97,9 @@ Get a key at <https://console.anthropic.com/>. The classifier uses model
 * **Team builder** — six-slot teams under the **Pokémon Champions** ruleset:
   legal-species/item gating, Stat Points and Stat Alignments, swipeable forms and
   Mega Evolution, search by move, drag-to-reorder, copy a Pokémon between teams,
-  export/import your teams as a backup file, and per-Pokémon
+  export/import/delete all your teams, and per-Pokémon
   defensive/offensive type-coverage analysis. See
-  [Team builder](#team-builder).
+  [Team builder](#team-builder) and [Backup & restore](#backup--restore).
 * **Camera identification** — point the camera at a Pokémon (card, plush,
   screenshot, drawing, costume…) or pick from the gallery; a vision LLM
   identifies it and jumps to the match. See
@@ -134,6 +160,7 @@ baselineprofile/ com.android.test module that generates the startup profile
 | Networking      | Retrofit + OkHttp + kotlinx.serialization, with a retrying interceptor for the PokeAPI client        |
 | Images          | Coil (128 MB disk cache) plus bundled type-symbol drawables                                          |
 | Camera          | CameraX                                                                                              |
+| Backup          | kotlinx.serialization JSON through the system file picker (saved teams only)                         |
 | Identification  | Anthropic Messages API (vision), optional — the app works without a key                              |
 | Tests           | JUnit, Turbine, MockK, Truth, Room `MigrationTestHelper`, Compose UI tests                           |
 | Tooling         | detekt, AndroidX Baseline Profile + Macrobenchmark                                                   |
@@ -272,17 +299,6 @@ pure Kotlin under `domain/team/`:
   same way.
 * **Deleting a team** asks for confirmation first, since it removes every
   Pokémon in it and can't be undone.
-* **Backup & restore** — the Teams header's ⋮ menu exports every saved team to a
-  JSON file and imports one back, through the system file picker (no storage
-  permission needed), so teams survive an uninstall, a lost phone, or a new
-  device. The file (`TeamBackup.kt`) is versioned and stores gender, shiny and
-  form as their own fields rather than Room's packed `teraType` / `level`
-  columns, so it doesn't depend on that storage shortcut. Import validates the
-  whole file first — wrong app, newer version, bad slots, duplicate slots or species, Stat
-  Points over the limits — and only then replaces every saved team in one Room
-  transaction (`TeamDao.replaceAllTeams`), after a confirmation. A rejected file
-  changes nothing and says why. Only teams are backed up; the Pokédex cache is
-  re-fetched on demand.
 * **Enrichment races** — placing a Pokémon (or reloading a saved team) kicks
   off a network fetch to fill in its types/stats/abilities/forms; the user can
   keep editing, swapping slots, or replacing that Pokémon while it's still in
@@ -296,6 +312,41 @@ Saved teams live in Room (`TeamDao` / `TeamEntities`) — real user data, distin
 from the disposable Pokédex cache. The Teams list is ordered by `team.sortOrder`
 (manual, set by drag-reordering; a new team is placed first), not by last-edited
 time, so editing a team never moves it. See "Known limitations" below.
+
+### Backup & restore
+
+The Teams header's ⋮ menu has *Export backup*, *Import backup* and *Delete all
+data*. Export and import go through the system file picker (no storage permission
+needed), so the file can go to Drive, email, or another device. It is named
+`pokedex-backup-<date>.json` by default.
+
+* **What's in the file** — every saved team, in on-screen order, with each
+  Pokémon's species, form, ability, nature, item, shiny, gender, Stat Points and
+  moves. The Pokédex cache isn't included; it's re-fetched on demand.
+* **Format** — one JSON document with `app`, `version` and `exportedAt` headers
+  (`TeamBackup.kt`, written with the `kotlinx.serialization` the app already uses).
+  Gender, shiny and form are their own fields rather than Room's packed
+  `teraType` / `level` columns, so the file doesn't depend on that storage
+  shortcut. Fields added in later versions are optional, so older backups still
+  import.
+* **Import replaces, and is all-or-nothing** — `TeamBackup.parse` validates the
+  whole file first (right app, not from a newer version, at most six Pokémon per
+  team, valid and unique slots, no species twice in a team, Stat Points and moves
+  within the game's limits) and only then replaces every saved team in one Room
+  transaction (`TeamDao.replaceAllTeams`), after a confirmation. A rejected file
+  changes nothing and the snackbar says why. Files over 10 MB are refused while
+  they're being read, so a wrong (huge) file can't exhaust memory; a real backup is
+  a few hundred KB at most.
+* **Delete all data** — removes every saved team and its Pokémon in one Room
+  transaction (`TeamRepository.deleteAllTeams`). Because that can't be undone, the
+  confirmation dialog keeps its button disabled until the user types `DELETE`
+  (case and surrounding spaces ignored, so a keyboard's auto-capitalisation
+  doesn't get in the way). The item is greyed out when there are no teams. The
+  Pokédex cache isn't touched; it isn't user data and is re-fetched on demand.
+* **Not covered** — automatic or scheduled backup: it's a manual export, and the
+  file is plain, unencrypted JSON. `allowBackup` is on, so Android's own cloud
+  backup and device transfer also carry `pokedex.db`, but that depends on the
+  phone's settings and isn't a substitute for an exported file.
 
 ### Camera identification
 
@@ -322,7 +373,7 @@ palette as the fallback, full dark-mode support, and type-colored chips/headers.
 
 ## Tests
 
-Unit (`./gradlew :app:testDebugUnitTest`):
+Unit (`./gradlew :app:testDebugUnitTest`, 154 tests):
 
 * `PokemonNamesTest` / `FlavorTextTest` / `PokemonFormsTest` — `core/` helpers
 * `SpritesTest` — the PokéAPI sprite-URL builder
@@ -352,14 +403,18 @@ Unit (`./gradlew :app:testDebugUnitTest`):
   leaving either stuck on screen
 * `TeamBackupTest` — the backup format round-trips every persisted field and the
   team order, tolerates missing optional fields and unknown keys, and rejects
-  non-backups, other apps' files, newer versions, bad or duplicate slots, duplicate species and
-  out-of-range Stat Points or moves
+  non-backups, other apps' files, newer versions, bad or duplicate slots, duplicate
+  species and out-of-range Stat Points or moves; a file over the size limit is
+  refused while reading, and one exactly at it is accepted
 * `TeamListViewModelTest` — `swapTeams` delegates to the repository, and is a
   no-op for two equal ids; export writes the repository's JSON to the chosen
-  file, and import reports a restore, an invalid file (with the reason) or an
-  unreadable one without touching the repository
+  file, and import reports a restore, an invalid or oversized file (with the
+  reason) or an unreadable one without touching the repository; `deleteAllTeams`
+  asks the repository to delete everything and reports a database failure
+* `DeleteConfirmationTest` — the typed phrase matches `DELETE` in any case with
+  surrounding whitespace, and nothing else
 
-Instrumented (`./gradlew :app:connectedDebugAndroidTest`):
+Instrumented (`./gradlew :app:connectedDebugAndroidTest`, 16 tests):
 
 * `PokemonListSearchTest` — typing in the search box filters the grid
 * `MigrationTest` — the current Room schema opens from scratch and through the
@@ -371,17 +426,21 @@ Instrumented (`./gradlew :app:connectedDebugAndroidTest`):
   `UPDATE` can't be trusted to do this correctly)
 * `TeamBackupRoundTripTest` — against real Room: an exported backup restores
   into a fresh database including the packed gender / shiny / form columns,
-  importing replaces the old teams and their members without orphans, and an
-  invalid file leaves existing teams untouched
+  importing replaces the old teams and their members without orphans, an
+  invalid file leaves existing teams untouched, and deleting all teams removes
+  their members too
 * `TeamsListScreenTest` — drives real Compose touch input (not a mock of the
   gesture) against the Teams list: a second drag on a row that already moved
   once uses its *current* position rather than the one its `pointerInput`
   coroutine was first launched with, and an ordinary swipe that starts on a
   row still scrolls the list instead of being swallowed by the reorder
-  gesture's touch handling
+  gesture's touch handling; and *Delete all data* stays disabled until `DELETE`
+  is typed, then removes every team, is cancellable, and is greyed out when
+  there are no teams
 
 ## Static analysis & performance
 
+* **Android lint** (`./gradlew :app:lintDebug`) — no errors.
 * **detekt** (`./gradlew :app:detekt`) runs against `config/detekt/detekt.yml`
   with a baseline (`config/detekt/baseline.xml`) — existing findings are frozen,
   new ones fail the task. Regenerate the baseline with `:app:detektBaseline`.
@@ -389,8 +448,16 @@ Instrumented (`./gradlew :app:connectedDebugAndroidTest`):
   scroll + detail + tab switch and writes `app/src/release/generated/
   baselineProfiles/`, which `assembleRelease` bakes into the APK
   (`assets/dexopt/`). Regenerate with `:app:generateBaselineProfile` on a device.
-  `release` (and the plugin's `nonMinifiedRelease` / `benchmarkRelease` variants)
-  is debug-signed since the app isn't published to Play.
+* **Release signing** — `release` (and the plugin's `nonMinifiedRelease` /
+  `benchmarkRelease` variants) is signed with your own key when a git-ignored
+  `keystore.properties` exists in the project root (copy
+  `keystore.properties.example`: `storeFile`, `storePassword`, `keyAlias`,
+  `keyPassword`), and falls back to the debug key when it doesn't, so a fresh
+  clone still builds and installs. An incomplete file fails the build with a
+  message naming the missing key. `*.jks`, `*.keystore` and `keystore.properties`
+  are git-ignored. Android only updates an installed app in place when the new
+  build has the *same* signing key, so switching keys later means uninstalling
+  first — which deletes the app's data, so export a backup beforehand.
 
 ## Known limitations / TODO
 
@@ -401,6 +468,11 @@ Instrumented (`./gradlew :app:connectedDebugAndroidTest`):
   `team_member.level` packs the shiny flag — a future migration should un-pack
   them (`MIGRATION_2_3` only added `team.sortOrder`). Splitting the disposable
   cache into its own database would be cleaner still.
+* **Backups are manual** — the app has no automatic or scheduled export. Android's
+  own cloud backup / device transfer carries `pokedex.db` (teams and cache
+  together) when the phone has it enabled, but that's outside the app's control,
+  so export a file from the Teams tab before uninstalling or changing phones. See
+  [Backup & restore](#backup--restore).
 * **`ChampionsLegal` is a static snapshot** — the species/item allow-list is
   hand-curated for the current regulation (Reg M-C, Sept–Dec 2026) rather than
   fetched from anywhere, so it won't update itself when the regulation rotates;

@@ -9,6 +9,7 @@ import com.pokedex.app.domain.team.Team
 import com.pokedex.app.domain.team.TeamMember
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.io.Reader
 import java.time.Instant
 
 /**
@@ -53,11 +54,28 @@ object TeamBackup {
     const val APP_ID = "PokeDex"
     const val VERSION = 1
 
+    /** A real backup is a few hundred KB at most; this stops a wrong (huge) file from exhausting memory. */
+    const val MAX_CHARS = 10_000_000
+
     private const val MAX_MEMBERS = 6
     private const val MAX_MOVES = 4
+    private const val READ_BUFFER_CHARS = 8192
 
     private val writer = Json { prettyPrint = true }
     private val reader = Json { ignoreUnknownKeys = true }
+
+    /** Reads a backup file's text, giving up as soon as it is larger than [MAX_CHARS]. */
+    fun readBounded(source: Reader): String {
+        val text = StringBuilder()
+        val buffer = CharArray(READ_BUFFER_CHARS)
+        while (true) {
+            val n = source.read(buffer)
+            if (n < 0) break
+            text.append(buffer, 0, n)
+            if (text.length > MAX_CHARS) invalid("This file is too large to be a PokéDex backup.")
+        }
+        return text.toString()
+    }
 
     /** Teams are written in the order given, which is their on-screen order. */
     fun toJson(teams: List<Team>, now: Instant = Instant.now()): String =

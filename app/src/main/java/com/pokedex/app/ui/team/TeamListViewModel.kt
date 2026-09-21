@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.pokedex.app.data.BackupException
+import com.pokedex.app.data.TeamBackup
 import com.pokedex.app.data.repository.PokemonRepository
 import com.pokedex.app.data.repository.TeamRepository
 import com.pokedex.app.domain.team.Team
@@ -86,6 +87,18 @@ class TeamListViewModel @Inject constructor(
         viewModelScope.launch { repository.deleteTeam(id) }
     }
 
+    /** Deletes every saved team. The screen asks the user to type DELETE before calling this. */
+    fun deleteAllTeams() {
+        viewModelScope.launch {
+            _message.value = try {
+                repository.deleteAllTeams()
+                "All teams deleted."
+            } catch (e: SQLException) {
+                "Couldn't delete your teams."
+            }
+        }
+    }
+
     /** Swaps two teams' positions in the list — called as a drag lands on a new slot. */
     fun swapTeams(id1: Long, id2: Long) {
         if (id1 == id2) return
@@ -113,7 +126,7 @@ class TeamListViewModel @Inject constructor(
         viewModelScope.launch {
             _message.value = try {
                 val json = withContext(io) {
-                    resolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                    resolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use(TeamBackup::readBounded)
                         ?: throw IOException("Couldn't open the file")
                 }
                 repository.importBackup(json)

@@ -47,6 +47,10 @@ class FakeTeamRepository(initial: List<Team>) : TeamRepository {
         state.value = teams.mapIndexed { index, team -> team.copy(id = index + 1L) }
     }
 
+    override suspend fun deleteAllTeams() {
+        state.value = emptyList()
+    }
+
     override suspend fun swapTeams(id1: Long, id2: Long) {
         swapCount++
         state.update { list ->
