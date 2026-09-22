@@ -116,6 +116,16 @@ data class TeamEditorUiState(
         return 0
     }
 
+    /**
+     * The gender [slot]'s current form pins it to, or null when it's free to choose. Only species
+     * whose genders are separate varieties (Indeedee, Basculegion, Oinkologne) have forms to lock on.
+     */
+    fun lockedGender(slot: Int): Gender? {
+        val fs = forms[slot].orEmpty()
+        if (fs.size < 2) return null
+        return fs.getOrNull(selectedFormIndex(slot))?.let { Gender.lockedByForm(it.slug) }
+    }
+
     /** A member with its types/stats reflecting the form it actually fields (Mega-by-stone, else saved regional). */
     fun effectiveMember(m: TeamMember): TeamMember {
         val fs = forms[m.slot].orEmpty()
@@ -513,20 +523,37 @@ class TeamEditorViewModel @Inject constructor(
 
     private fun applyForm(slot: Int, form: MemberForm, base: MemberForm?, persist: Boolean = true) {
         val src = if (form.isBase) base else form
+        var movesChanged = false
         mutate(slot, persist = persist) { m ->
             val abilities = src?.abilities ?: m.abilityChoices
+            val movePool = src?.movePool?.takeIf { it.isNotEmpty() } ?: m.movePool
+            // A move the old form knew but the new one doesn't (e.g. Indeedee-M's Expanding Force
+            // switching to Indeedee-F, or a regional form with a different type/learnset) can't
+            // stay equipped. Selecting a Mega doesn't go through here at all (it's item-driven —
+            // see selectForm's `form.isMega` branch), so this only ever runs for a base/regional
+            // switch, whose move pool can genuinely differ from what was equipped before.
+            val moves = m.moves.map { move -> move?.takeIf { it in movePool } }
+            movesChanged = moves != m.moves
             m.copy(
                 formSlug = if (form.isBase) null else form.slug,
                 types = src?.types ?: m.types,
                 baseStats = src?.baseStats ?: m.baseStats,
                 abilityChoices = abilities,
-                movePool = src?.movePool?.takeIf { it.isNotEmpty() } ?: m.movePool,
+                movePool = movePool,
+                moves = moves,
+                // Indeedee-F is female and its base form male; other forms leave gender alone.
+                gender = Gender.lockedByForm(form.slug) ?: m.gender,
                 ability = when {
                     abilities.any { it.name == m.ability } -> m.ability
                     else -> abilities.firstOrNull { !it.isHidden }?.name ?: m.ability
                 },
             )
         }
+        // Dropping an illegal move is a real correction to saved data — unlike the rest of what
+        // this call may hydrate (types/stats/movePool aren't TeamMemberEntity columns at all) — so
+        // it must be saved even when told not to persist, or the illegal move would survive in
+        // Room and in any backup exported before the member is next edited.
+        if (!persist && movesChanged) persist()
     }
 
     /** Loads the Mega / regional / other varieties for a slot's Pokémon, once. */
@@ -540,8 +567,16 @@ class TeamEditorViewModel @Inject constructor(
             val list = if (bundle == null) {
                 emptyList()
             } else {
+                // The base form of a gender-split species (Indeedee, Basculegion, Oinkologne) is
+                // itself always one gender — label it "MALE"/"FEMALE" rather than "Base", matching
+                // the alternate's own "FEMALE" badge (PokemonForms.badge uppercases OTHER forms).
+                val baseLabel = when (Gender.lockedByForm(bundle.base.name)) {
+                    Gender.MALE -> "MALE"
+                    Gender.FEMALE -> "FEMALE"
+                    else -> "Base"
+                }
                 buildList {
-                    add(bundle.base.toMemberForm("Base", isBase = true))
+                    add(bundle.base.toMemberForm(baseLabel, isBase = true))
                     bundle.alternates.forEach { add(it.detail.toMemberForm(it.tabLabel, isBase = false, kind = it.kind)) }
                 }
             }
@@ -567,6 +602,16 @@ class TeamEditorViewModel @Inject constructor(
                 } else {
                     applyForm(currentSlot, it, list.firstOrNull(), persist = false)
                 }
+            }
+
+            // A gender-split species' form fixes its gender, but a member saved (or added) before
+            // its forms loaded may say "Any gender" or the wrong one. Correct it once, and persist
+            // that correction — unlike the hydration above, it changes what was actually saved.
+            val locked = list.takeIf { it.size > 1 }
+                ?.let { fs -> (stored ?: fs.first()).takeUnless { it.isMega }?.slug }
+                ?.let(Gender::lockedByForm)
+            if (locked != null && m?.gender != locked) {
+                mutate(currentSlot) { member -> member.copy(gender = locked) }
             }
         }
     }
@@ -704,7 +749,10 @@ class TeamEditorViewModel @Inject constructor(
     fun setAbility(slot: Int, ability: String) = mutate(slot) { it.copy(ability = ability) }
     fun setNature(slot: Int, nature: Nature) = mutate(slot) { it.copy(nature = nature) }
     fun setShiny(slot: Int, shiny: Boolean) = mutate(slot) { it.copy(shiny = shiny) }
-    fun setGender(slot: Int, gender: Gender) = mutate(slot) { it.copy(gender = gender) }
+    fun setGender(slot: Int, gender: Gender) {
+        if (_state.value.lockedGender(slot) != null) return // the form decides it
+        mutate(slot) { it.copy(gender = gender) }
+    }
     fun setItem(slot: Int, item: String?) {
         mutate(slot) { it.copy(item = item) }
         item?.let { loadItemInfo(listOf(it)) }

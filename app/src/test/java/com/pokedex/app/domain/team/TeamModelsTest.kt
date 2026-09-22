@@ -6,6 +6,15 @@ import org.junit.Test
 /** [StatCalc], [Nature], [Gender] and the Stat-Point helpers on [TeamMember]. */
 class TeamModelsTest {
 
+    @Test
+    fun `a gender-split form slug fixes the gender and other forms leave it free`() {
+        assertThat(Gender.lockedByForm("indeedee-female")).isEqualTo(Gender.FEMALE)
+        assertThat(Gender.lockedByForm("indeedee-male")).isEqualTo(Gender.MALE)
+        assertThat(Gender.lockedByForm("charizard")).isNull()
+        assertThat(Gender.lockedByForm("charizard-mega-x")).isNull()
+        assertThat(Gender.lockedByForm("ninetales-alola")).isNull()
+    }
+
     // ---- StatCalc -------------------------------------------------------------
 
     @Test

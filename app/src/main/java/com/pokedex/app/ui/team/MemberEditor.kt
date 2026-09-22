@@ -143,7 +143,7 @@ internal fun MemberEditor(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             MemberProfileCard(member, forms, selectedForm, onSelectForm)
-            AppearanceSection(member, slot, viewModel)
+            AppearanceSection(member, slot, activeForm?.let { Gender.lockedByForm(it.slug) }, viewModel)
             AbilitySection(member, slot, onForm, activeForm, abilityInfo, viewModel)
             StatAlignmentSection(member, forms, onOpenSheet = { sheet = it })
             StatPointsSection(member, slot, showBaseStats, showFinal, viewModel)
@@ -312,16 +312,17 @@ private fun MemberProfileFormPage(
 }
 
 @Composable
-private fun AppearanceSection(member: TeamMember, slot: Int, viewModel: TeamEditorViewModel) {
+private fun AppearanceSection(member: TeamMember, slot: Int, lockedGender: Gender?, viewModel: TeamEditorViewModel) {
     SectionCard("Appearance") {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Pill(if (member.shiny) "✨ Shiny" else "Shiny", selected = member.shiny) {
                 viewModel.setShiny(slot, !member.shiny)
             }
-            Gender.entries.forEach { g ->
+            // A form that fixes the gender (Indeedee-F, or the male base form) offers only that one.
+            (if (lockedGender != null) listOf(lockedGender) else Gender.entries).forEach { g ->
                 Pill(
                     if (g == Gender.DEFAULT) "Any gender" else "${g.symbol} ${g.label}",
-                    selected = member.gender == g,
+                    selected = member.gender == g || lockedGender == g,
                 ) { viewModel.setGender(slot, g) }
             }
         }

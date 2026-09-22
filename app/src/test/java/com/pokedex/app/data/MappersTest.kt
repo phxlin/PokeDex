@@ -1,6 +1,7 @@
 package com.pokedex.app.data
 
 import com.google.common.truth.Truth.assertThat
+import com.google.common.truth.Truth.assertWithMessage
 import com.pokedex.app.data.remote.dto.MoveSlotDto
 import com.pokedex.app.data.remote.dto.MoveVersionGroupDetailDto
 import com.pokedex.app.data.remote.dto.NamedApiResourceDto
@@ -76,5 +77,56 @@ class MappersTest {
         val movePool = dto.toDomain().movePool
 
         assertThat(movePool).containsExactly("first-impression")
+    }
+
+    @Test
+    fun `Indeedee female gets its own Champions learnset, not the male's Expanding Force or Gravity`() {
+        // PokeAPI has no train data for Indeedee, so the blended union would hand every move of
+        // either gender to both.
+        val dto = PokemonDto(
+            id = 10186,
+            name = "indeedee-female",
+            moves = listOf(nonTrainMove("expanding-force"), nonTrainMove("gravity"), nonTrainMove("follow-me")),
+        )
+
+        val movePool = dto.toDomain().movePool
+
+        assertThat(movePool).doesNotContain("expanding-force")
+        assertThat(movePool).doesNotContain("gravity")
+        assertThat(movePool).containsAtLeast("follow-me", "alluring-voice", "baton-pass", "guard-split")
+    }
+
+    @Test
+    fun `Indeedee male keeps Expanding Force and Gravity but not the female's Follow Me`() {
+        val dto = PokemonDto(
+            id = 876,
+            name = "indeedee-male",
+            moves = listOf(nonTrainMove("follow-me")),
+        )
+
+        val movePool = dto.toDomain().movePool
+
+        assertThat(movePool).containsAtLeast("expanding-force", "gravity", "psychic-terrain")
+        assertThat(movePool).doesNotContain("follow-me")
+    }
+
+    @Test
+    fun `Champions learnset table never overrides PokeAPI train data`() {
+        val dto = PokemonDto(
+            id = 10186,
+            name = "indeedee-female",
+            moves = listOf(trainMove("psychic"), trainMove("gravity")),
+        )
+
+        assertThat(dto.toDomain().movePool).containsExactly("gravity", "psychic")
+    }
+
+    @Test
+    fun `every Champions learnset entry is a valid lowercase PokeAPI move slug, sorted without duplicates`() {
+        CHAMPIONS_MOVE_POOLS.forEach { (species, moves) ->
+            assertWithMessage(species).that(moves).containsNoDuplicates()
+            assertWithMessage(species).that(moves).isInStrictOrder()
+            moves.forEach { assertThat(it).matches("[a-z]+(-[a-z]+)*") }
+        }
     }
 }

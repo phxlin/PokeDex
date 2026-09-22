@@ -252,10 +252,29 @@ pure Kotlin under `domain/team/`:
   moves a species knows in older games but that are disabled in Champions
   (Tsareena knows Magical Leaf, but it's unusable there). `Mappers.movePoolFor`
   prefers `train`-tagged moves when PokéAPI has populated them for a species,
-  falling back to the older "every move from any game" union — patched for
-  specific known PokéAPI gaps via `MOVE_POOL_PATCHES` (e.g. Golisopod's
-  U-turn and Aqua Jet), only in that fallback branch, never on top of `train`
-  data — for species PokéAPI hasn't reached yet.
+  falling back, for species PokéAPI hasn't reached yet, to a curated Champions
+  learnset where the two genders differ (`CHAMPIONS_MOVE_POOLS`: Indeedee-M has
+  Expanding Force and Gravity, Indeedee-F has Follow Me and Alluring Voice —
+  from Pokémon Showdown's Champions data), and otherwise to the older "every
+  move from any game" union, patched for specific known gaps via
+  `MOVE_POOL_PATCHES` (e.g. Golisopod's U-turn and Aqua Jet). Both fallbacks
+  apply only when there is no `train` data, never on top of it.
+* **Gender-split forms** — Indeedee, Basculegion and Oinkologne have a separate
+  variety per gender (`indeedee-male` is the base form, `indeedee-female` a form
+  tab), so the form decides the gender: the base form is male, the female tab is
+  female and swaps in the female move pool, and the Appearance section offers only
+  that one gender (`Gender.lockedByForm`). A member saved with "Any gender" or the
+  wrong one is corrected once when its forms load. The tabs read "MALE" / "FEMALE"
+  for these species instead of the usual "Base" / form-name badges. Selecting a
+  base or regional tab also drops any equipped move the destination form's pool
+  doesn't have (`TeamEditorViewModel.applyForm`) — a regional form's pool can
+  genuinely differ (Alolan Ninetales' Ice/Fairy pool has little overlap with the
+  original Fire-type Ninetales' Fire moves), and this is what stops a gender
+  switch from leaving the other gender's exclusive moves equipped. The correction
+  is saved even when the form is being hydrated from a saved choice rather than
+  actively picked, since it fixes what's actually stored. A Mega tab is
+  item-driven and doesn't go through `applyForm` at all, so this doesn't apply to
+  it — PokéAPI's Mega move pools match their base species' anyway.
 * **Search by move** — the "Add Pokémon" sheet's search field toggles between
   Name and Move. Move search first gets a cheap candidate list from PokéAPI's
   `/move/{name}` endpoint (`learned_by_pokemon`), then — since that reverse
@@ -373,7 +392,7 @@ palette as the fallback, full dark-mode support, and type-colored chips/headers.
 
 ## Tests
 
-Unit (`./gradlew :app:testDebugUnitTest`, 154 tests):
+Unit (`./gradlew :app:testDebugUnitTest`, 169 tests):
 
 * `PokemonNamesTest` / `FlavorTextTest` / `PokemonFormsTest` — `core/` helpers
 * `SpritesTest` — the PokéAPI sprite-URL builder
@@ -385,9 +404,18 @@ Unit (`./gradlew :app:testDebugUnitTest`, 154 tests):
   rather than silently trusted), and `pokemonIdsOfMove` only returning species
   where the move is actually Champions-legal (MockK)
 * `MappersTest` — `movePoolFor`'s train-preferred/fallback/patch logic,
-  including that a patch never overrides real `train` data
+  including that a patch never overrides real `train` data, and that Indeedee-F
+  and Indeedee-M each get their own Champions learnset (no Expanding Force or
+  Gravity for the female, no Follow Me for the male)
+* `GenderSplitFormsTest` — the base Indeedee is male, the female tab makes it
+  female with the female move pool (and back) and clears an equipped move the new
+  form can't learn while keeping a shared one, form tabs read "MALE"/"FEMALE",
+  the gender can't be changed while the form fixes it, a stale saved gender *and*
+  an illegal equipped move are corrected and saved on load, and species without
+  gender-split forms are unaffected
 * `RetryInterceptorTest` — retry / backoff / give-up behaviour on a fake chain
-* `TeamModelsTest` — `StatCalc` formula, Stat Alignments, `Gender`, SP helpers
+* `TeamModelsTest` — `StatCalc` formula, Stat Alignments, `Gender` (including
+  `lockedByForm`), SP helpers
 * `ChampionsLegalTest` — species and item legality
 * `TeamAnalysisTest` — defensive / offensive type coverage, ability immunities,
   base-vs-Mega handling, speed order, shared weaknesses
@@ -477,6 +505,13 @@ Instrumented (`./gradlew :app:connectedDebugAndroidTest`, 16 tests):
   hand-curated for the current regulation (Reg M-C, Sept–Dec 2026) rather than
   fetched from anywhere, so it won't update itself when the regulation rotates;
   someone has to refresh `ChampionsLegal.SPECIES` / `ITEMS` by hand at that point.
+* **Indeedee's move pools are a static snapshot, and move search is per species** —
+  `CHAMPIONS_MOVE_POOLS` is hand-copied from Showdown's Champions data because
+  PokéAPI has no `train` data for Indeedee yet, so it won't follow later
+  changes (drop it once PokéAPI catches up). Search-by-move works per species
+  through its default (male) form, so a female-only move like Follow Me won't
+  surface Indeedee there, though its move picker offers it once you pick the
+  female tab.
 * **Accessibility** — icon-only controls and the hero artwork are labelled, but
   the coverage grids read as a stream of type names rather than a spoken summary.
 * **Classifier model** — `claude-sonnet-4-6`; newer models are available.

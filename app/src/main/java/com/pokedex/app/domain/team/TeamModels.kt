@@ -87,7 +87,11 @@ object StatCalc {
 
 data class AbilityChoice(val name: String, val display: String, val isHidden: Boolean)
 
-/** A team member's gender — cosmetic in this builder (no legality checks). */
+/**
+ * A team member's gender — cosmetic in this builder (no legality checks), except for species whose
+ * genders are separate varieties (Indeedee, Basculegion, Oinkologne): there the form fixes it, see
+ * [lockedByForm].
+ */
 enum class Gender(val symbol: String, val label: String) {
     DEFAULT("", "Any"),
     MALE("♂", "Male"),
@@ -96,6 +100,16 @@ enum class Gender(val symbol: String, val label: String) {
 
     companion object {
         fun fromStored(s: String?): Gender = entries.firstOrNull { it.name == s } ?: DEFAULT
+
+        /**
+         * The gender a gender-split variety slug pins its Pokémon to: `indeedee-female` is always
+         * female and `indeedee-male` (the base form) always male. Null for any other form.
+         */
+        fun lockedByForm(formSlug: String): Gender? = when {
+            formSlug.endsWith("-female") -> FEMALE
+            formSlug.endsWith("-male") -> MALE
+            else -> null
+        }
     }
 }
 

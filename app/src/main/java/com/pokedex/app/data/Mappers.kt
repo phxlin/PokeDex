@@ -115,7 +115,11 @@ private fun movePoolFor(moves: List<MoveSlotDto>, slug: String): List<String> {
         .mapNotNull { it.move.name.takeIf { n -> n.isNotBlank() } }
     if (trainMoves.isNotEmpty()) return trainMoves.distinct().sorted()
 
-    // No train data for this species yet — MOVE_POOL_PATCHES only applies here, never
+    // No train data yet: a curated Champions learnset (species whose genders differ) beats the
+    // blended union, which would give each gender the other's exclusive moves.
+    CHAMPIONS_MOVE_POOLS[slug]?.let { return it.sorted() }
+
+    // MOVE_POOL_PATCHES only applies here, never
     // on top of train data: a patch is sourced from a species' general-game learnset,
     // which says nothing about whether that move is actually enabled in Champions.
     val fallback = moves.mapNotNull { it.move.name.takeIf { n -> n.isNotBlank() } }
