@@ -652,7 +652,16 @@ private fun FormTabRow(tabs: List<String>, selected: Int, onSelect: (Int) -> Uni
     }
 }
 
-/** A draggable slider for allocating Stat Points, scaled 0..[max]. */
+/**
+ * A draggable slider for allocating Stat Points, scaled 0..[max].
+ *
+ * `constraints.maxWidth` below does read the [androidx.compose.foundation.layout.BoxWithConstraintsScope]
+ * (`compose-foundation`'s own `BoxWithConstraintsDetector` looks for exactly a `constraints`
+ * property access), so this is a false positive of that check on Android Studio's live
+ * inspector — `./gradlew :app:lintDebug`, which runs the identical bundled rule, reports nothing
+ * here.
+ */
+@Suppress("UnusedBoxWithConstraintsScope")
 @Composable
 private fun StatSlider(
     value: Int,
