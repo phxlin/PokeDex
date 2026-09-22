@@ -42,7 +42,7 @@ data class PickerControls(
     val activeFilterCount: Int get() = types.size + generations.size
 }
 
-/** [moveIds]/[abilityIds]'s shape: the slugs already looked up, each mapped to its matching ids. */
+/** Shape shared by [PokemonPickerViewModel]'s per-mode id caches: slugs already looked up, each mapped to its matching ids. */
 private typealias SlugIndex = Map<String, Set<Int>>
 
 @OptIn(kotlinx.coroutines.FlowPreview::class)

@@ -73,7 +73,7 @@ class PokemonRepositoryImplTest {
     @Test
     fun `legacy cache without learn methods is refreshed before choosing Champions moves`() = runTest {
         val legacy = """{"id":763,"name":"tsareena","moves":[{"move":{"name":"trop-kick"}},{"move":{"name":"magical-leaf"}}]}"""
-        coEvery { cacheDao.get("pokemon/tsareena") } returns com.pokedex.app.data.local.RawCacheEntity(
+        coEvery { cacheDao.get("pokemon/tsareena") } returns RawCacheEntity(
             "pokemon/tsareena", legacy, System.currentTimeMillis(),
         )
         val freshBody = """

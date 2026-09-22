@@ -1,5 +1,8 @@
 package com.pokedex.app.data
 
+import com.pokedex.app.data.repository.PokemonRepositoryImpl
+import com.pokedex.app.domain.model.PokemonDetail
+
 /**
  * Champions learnsets for species where the two gendered varieties learn different moves and
  * PokéAPI has no `train` (Champions) data yet, so [movePoolFor] would otherwise fall back to
