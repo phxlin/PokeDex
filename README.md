@@ -95,9 +95,10 @@ Get a key at <https://console.anthropic.com/>. The classifier uses model
   (including regional trees), swipeable form tabs and cry playback. See
   [Evolution chains](#evolution-chains) and [Cry playback](#cry-playback).
 * **Team builder** — six-slot teams under the **Pokémon Champions** ruleset:
-  legal-species/item gating, Stat Points and Stat Alignments, swipeable forms and
-  Mega Evolution, search by move, drag-to-reorder, copy a Pokémon between teams,
-  export/import/delete all your teams, and per-Pokémon
+  legal-species/item gating (including Item Clause), Stat Points and Stat
+  Alignments, swipeable forms and Mega Evolution, search by move or ability,
+  drag-to-reorder, copy a Pokémon between teams, export/import/delete all your
+  teams, and per-Pokémon
   defensive/offensive type-coverage analysis. See
   [Team builder](#team-builder) and [Backup & restore](#backup--restore).
 * **Camera identification** — point the camera at a Pokémon (card, plush,
@@ -276,12 +277,33 @@ pure Kotlin under `domain/team/`:
   item-driven and doesn't go through `applyForm` at all, so this doesn't apply to
   it — PokéAPI's Mega move pools match their base species' anyway.
 * **Search by move** — the "Add Pokémon" sheet's search field toggles between
-  Name and Move. Move search first gets a cheap candidate list from PokéAPI's
-  `/move/{name}` endpoint (`learned_by_pokemon`), then — since that reverse
-  index carries no per-entry learn-method info — verifies each candidate the
-  same Champions-accurate way as above (`PokemonRepositoryImpl.pokemonIdsOfMove`),
-  so a move that's disabled in Champions for a given species (Magical Leaf on
-  Tsareena, again) correctly excludes it from the results too.
+  Name, Move and Ability. Move search first gets a cheap candidate list from
+  PokéAPI's `/move/{name}` endpoint (`learned_by_pokemon`), then — since that
+  reverse index carries no per-entry learn-method info — verifies each
+  candidate the same Champions-accurate way as above
+  (`PokemonRepositoryImpl.pokemonIdsOfMove`), so a move that's disabled in
+  Champions for a given species (Magical Leaf on Tsareena, again) correctly
+  excludes it from the results too. A gender-split species' non-default
+  (female) variety id is let through as a search candidate too, even though
+  it's outside the normal 1..10000 range every other alternate-variety id is
+  excluded from to avoid duplicate Mega/regional results
+  (`GENDER_SPLIT_VARIETY_IDS`) — PokéAPI's move index sometimes omits the male
+  entirely (Follow Me lists only `indeedee-female`, never `indeedee-male`), so
+  without it a female-only move would never surface that species at all.
+  Fetching that candidate uses the same movePool check as everything else — for
+  Indeedee that still means the curated `CHAMPIONS_MOVE_POOLS` fallback, but
+  Meowstic needs no curated data at all: PokéAPI's own per-variety move list is
+  already correctly split by gender for it, unlike Indeedee's.
+* **Search by ability** — the same sheet's third mode. Unlike moves, PokéAPI's
+  ability→Pokémon index (`/ability/{name}`, added to `AbilityDto` for this)
+  already names exactly the species that can have it, hidden or not, with no
+  further per-species *legality* check needed — Champions doesn't disable
+  abilities the way it disables some moves — so `pokemonIdsOfAbility` maps
+  most entries straight to National Dex ids with no fetch, unlike move
+  search. The exception is an alternate-variety entry (id > 10000): Alolan
+  Ninetales has Snow Warning but Kantonian Ninetales doesn't, so that id is
+  fetched and resolved back to its species id rather than dropped, the same
+  way move search resolves a `GENDER_SPLIT_VARIETY_IDS` candidate.
 * **`CompetitiveItems`** — held-item catalogue (staples, choice, berries, ~80
   Mega Stones incl. Champions-only ones). Carries an `apiSlug` for items PokéAPI
   names differently (Leek → `stick`) and a bundled `blurb` for the many Gen
@@ -291,6 +313,12 @@ pure Kotlin under `domain/team/`:
   `heldItemFallbackGlyph` shows a category-appropriate placeholder (💠 for a
   Mega Stone, 🍒 for a berry) instead of a generic bag, and swaps in the real
   sprite automatically the moment PokéAPI publishes one.
+* **Item Clause** — no two Pokémon on the same team hold the same item. The
+  held-item picker greys out an item already held elsewhere on the team, next
+  to "on <Pokémon>", the same treatment as a Champions-illegal item, and its
+  tap does nothing; the caption above the list covers both reasons together.
+  Copying a Pokémon in from another team (`TeamEditorViewModel.addFromMember`)
+  drops its item instead if that would collide with this team's own.
 * **`StatCalc`** — Level 50, 31 IVs, 66 Stat Points (max 32/stat), 21 "Stat
   Alignments" (renamed natures).
 * **Forms** — regional forms (Alolan, Galarian, …) are a first-class, persisted
@@ -392,7 +420,7 @@ palette as the fallback, full dark-mode support, and type-colored chips/headers.
 
 ## Tests
 
-Unit (`./gradlew :app:testDebugUnitTest`, 169 tests):
+Unit (`./gradlew :app:testDebugUnitTest`, 183 tests):
 
 * `PokemonNamesTest` / `FlavorTextTest` / `PokemonFormsTest` — `core/` helpers
 * `SpritesTest` — the PokéAPI sprite-URL builder
@@ -401,8 +429,15 @@ Unit (`./gradlew :app:testDebugUnitTest`, 169 tests):
   `"null"`, malformed input
 * `PokemonRepositoryImplTest` — index refresh filtering, name resolution, the
   legacy-cache-key regression (a pre-Champions cache entry gets refreshed
-  rather than silently trusted), and `pokemonIdsOfMove` only returning species
-  where the move is actually Champions-legal (MockK)
+  rather than silently trusted, the same check repeated for a pre-ability-search
+  cached body), `pokemonIdsOfMove` only returning species where the move is
+  actually Champions-legal, Indeedee found (as its species id, not the variety
+  id) for a female-only move PokéAPI lists under only `indeedee-female`, the
+  same for a male-only move once both genders are reachable, Meowstic found for
+  a female-only move straight from PokéAPI's own data with no curated table,
+  and `pokemonIdsOfAbility` returning every direct-id species with no fetch,
+  plus an alternate-variety entry (Alolan Ninetales for Snow Warning) resolved
+  to its species id rather than dropped (MockK)
 * `MappersTest` — `movePoolFor`'s train-preferred/fallback/patch logic,
   including that a patch never overrides real `train` data, and that Indeedee-F
   and Indeedee-M each get their own Champions learnset (no Expanding Force or
@@ -426,9 +461,13 @@ Unit (`./gradlew :app:testDebugUnitTest`, 169 tests):
 * `TeamEditorVerificationTest` — the enrichment-race guards above: an edit or a
   slot swap made while a fetch is in flight survives, a swapped member's forms
   still load at its new slot, and a failed fetch doesn't clear a saved ability
-* `PokemonPickerVerificationTest` — leaving Move search for Name mode clears a
-  cancelled search's "checking…" state and a failed search's error, rather than
-  leaving either stuck on screen
+* `PokemonPickerVerificationTest` — leaving Move or Ability search for Name mode
+  clears a cancelled search's "checking…" state and a failed search's error
+  rather than leaving either stuck on screen, and resolving one search doesn't
+  touch the other's loading flag
+* `ItemClauseTest` — copying a Pokémon in from another team drops its item if
+  that collides with this team's own, keeps it otherwise, and a member's own
+  item is never treated as colliding with itself
 * `TeamBackupTest` — the backup format round-trips every persisted field and the
   team order, tolerates missing optional fields and unknown keys, and rejects
   non-backups, other apps' files, newer versions, bad or duplicate slots, duplicate
@@ -505,13 +544,11 @@ Instrumented (`./gradlew :app:connectedDebugAndroidTest`, 16 tests):
   hand-curated for the current regulation (Reg M-C, Sept–Dec 2026) rather than
   fetched from anywhere, so it won't update itself when the regulation rotates;
   someone has to refresh `ChampionsLegal.SPECIES` / `ITEMS` by hand at that point.
-* **Indeedee's move pools are a static snapshot, and move search is per species** —
-  `CHAMPIONS_MOVE_POOLS` is hand-copied from Showdown's Champions data because
-  PokéAPI has no `train` data for Indeedee yet, so it won't follow later
-  changes (drop it once PokéAPI catches up). Search-by-move works per species
-  through its default (male) form, so a female-only move like Follow Me won't
-  surface Indeedee there, though its move picker offers it once you pick the
-  female tab.
+* **`CHAMPIONS_MOVE_POOLS` is a static snapshot** — hand-copied from Showdown's
+  Champions data for Indeedee, since PokéAPI has no `train` data for it yet and
+  its own per-variety move lists incorrectly duplicate some moves across both
+  genders (unlike Meowstic's, which needs no such table). Won't follow later
+  changes; drop it once PokéAPI has real `train` data for Indeedee.
 * **Accessibility** — icon-only controls and the hero artwork are labelled, but
   the coverage grids read as a stream of type names rather than a spoken summary.
 * **Classifier model** — `claude-sonnet-4-6`; newer models are available.

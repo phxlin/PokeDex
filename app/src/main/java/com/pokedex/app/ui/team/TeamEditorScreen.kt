@@ -109,6 +109,7 @@ fun TeamEditorScreen(
                 abilityInfo = state.abilityInfo,
                 forms = forms,
                 selectedForm = state.selectedFormIndex(open),
+                otherMembers = state.members.filter { it.slot != open },
                 onSelectForm = { viewModel.selectForm(open, it) },
                 onBack = viewModel::closeSlot,
                 onHome = onHome,

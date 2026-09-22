@@ -635,8 +635,13 @@ class TeamEditorViewModel @Inject constructor(
      * an independent starting point. Editing it here never touches the team [source]
      * came from. Returns false if that species is already on this team.
      */
-    fun addFromMember(slot: Int, source: TeamMember): Boolean =
-        placeMember(slot, source.copy(slot = slot, displayName = source.speciesName))
+    fun addFromMember(slot: Int, source: TeamMember): Boolean {
+        // Item Clause: a copy that would collide with an item already held elsewhere on *this*
+        // team arrives with no item, rather than silently duplicating one — the source team's own
+        // Item Clause said nothing about what this team already has equipped.
+        val item = source.item.takeUnless { it != null && _state.value.members.any { m -> m.slot != slot && m.item == it } }
+        return placeMember(slot, source.copy(slot = slot, item = item, displayName = source.speciesName))
+    }
 
     /** Shared by [addPokemon] and [addFromMember]: place [member] in [slot], then enrich it. */
     private fun placeMember(slot: Int, member: TeamMember): Boolean {

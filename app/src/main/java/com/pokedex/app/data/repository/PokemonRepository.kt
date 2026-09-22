@@ -50,6 +50,17 @@ interface PokemonRepository {
      */
     suspend fun pokemonIdsOfMove(move: String): Result<Set<Int>>
 
+    /**
+     * National Dex ids of every Pokémon that can have [ability] — PokéAPI's own ability→Pokémon
+     * index, unlike [pokemonIdsOfMove]'s move index, already names exactly the species (and
+     * variety) that can actually have it, hidden or not, with no further per-species *legality*
+     * check needed: Champions doesn't disable abilities the way it disables some moves. An
+     * alternate-variety entry (e.g. Alolan Ninetales for Snow Warning) is still resolved back to
+     * its species id, since that variety can be the only holder of the ability. Cached; used by
+     * the team builder's ability filter.
+     */
+    suspend fun pokemonIdsOfAbility(ability: String): Result<Set<Int>>
+
     /** Resolve a (possibly messy) name to a National Dex id — used by camera identify. */
     suspend fun resolvePokemonId(rawName: String): Result<Int>
 

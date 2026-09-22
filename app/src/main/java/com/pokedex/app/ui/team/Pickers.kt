@@ -307,6 +307,10 @@ fun PokemonPickerSheet(
     val filtering by viewModel.isFiltering.collectAsStateWithLifecycle()
     val filteringByMove by viewModel.isFilteringByMove.collectAsStateWithLifecycle()
     val hasMoveError by viewModel.hasMoveError.collectAsStateWithLifecycle()
+    val filteringByAbility by viewModel.isFilteringByAbility.collectAsStateWithLifecycle()
+    val hasAbilityError by viewModel.hasAbilityError.collectAsStateWithLifecycle()
+    val checking = filteringByMove || filteringByAbility
+    val hasSearchError = (hasMoveError && !filteringByMove) || (hasAbilityError && !filteringByAbility)
     val listState = rememberLazyListState()
     LaunchedEffect(controls.sort, controls.types, controls.generations, controls.searchMode, controls.searchText) {
         listState.scrollToItem(0)
@@ -320,6 +324,13 @@ fun PokemonPickerSheet(
         if (controls.searchMode == PickerSearchMode.MOVE) {
             Text(
                 "Only Pokémon that can actually learn it under ${ChampionsLegal.REGULATION}.",
+                style = MaterialTheme.typography.labelSmall,
+                color = SheetDim,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp),
+            )
+        } else if (controls.searchMode == PickerSearchMode.ABILITY) {
+            Text(
+                "Includes hidden abilities.",
                 style = MaterialTheme.typography.labelSmall,
                 color = SheetDim,
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp),
@@ -347,11 +358,13 @@ fun PokemonPickerSheet(
             when {
                 filtering -> "Loading type filter…"
                 filteringByMove -> "Checking which Pokémon can learn that move…"
+                filteringByAbility -> "Checking which Pokémon can have that ability…"
                 hasMoveError -> "Couldn't check that move — check your connection and try again."
+                hasAbilityError -> "Couldn't check that ability — check your connection and try again."
                 else -> "${results.size} Pokémon"
             },
             style = MaterialTheme.typography.labelSmall,
-            color = if (hasMoveError && !filteringByMove) MaterialTheme.colorScheme.error else SheetDim,
+            color = if (hasSearchError && !checking) MaterialTheme.colorScheme.error else SheetDim,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
         )
         Text(
@@ -600,6 +613,8 @@ private enum class ItemSort(val label: String) { CURATED("Suggested"), NAME_ASC(
 fun ItemPickerSheet(
     species: String?,
     itemInfo: Map<String, com.pokedex.app.domain.team.ItemInfo>,
+    /** Item Clause: item slug -> the teammate already holding it (never this Pokémon's own slot). */
+    heldElsewhere: Map<String, String> = emptyMap(),
     onNeedInfo: (List<String>) -> Unit,
     onDismiss: () -> Unit,
     onPick: (String?) -> Unit,
@@ -643,7 +658,8 @@ fun ItemPickerSheet(
         }
         Spacer(Modifier.size(4.dp))
         Text(
-            "Greyed-out items aren't legal in ${ChampionsLegal.REGULATION}.",
+            "Greyed-out items aren't legal in ${ChampionsLegal.REGULATION}, " +
+                "or are already held by another Pokémon on this team.",
             style = MaterialTheme.typography.labelSmall,
             color = SheetDim,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
@@ -658,60 +674,64 @@ fun ItemPickerSheet(
         }
         LazyColumn(state = listState, modifier = Modifier.heightIn(max = 400.dp)) {
             items(filtered, key = { it.slug }) { item: HeldItem ->
-                val legal = item.championsLegal
-                val spriteUrl = item.spriteUrl
-                val fallbackGlyph = heldItemFallbackGlyph(item.slug)
-                val effect = itemInfo[item.slug]?.shortEffect?.takeIf { it.isNotBlank() } ?: item.blurb
-                Surface(
-                    onClick = { if (legal) { onPick(item.slug); onDismiss() } },
-                    color = Color.Transparent,
-                ) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        if (spriteUrl == null) {
-                            Text(
-                                fallbackGlyph,
-                                modifier = Modifier.size(26.dp).alpha(if (legal) 1f else 0.4f),
-                                style = MaterialTheme.typography.titleMedium,
-                            )
-                        } else {
-                            AsyncImage(
-                                model = spriteUrl,
-                                contentDescription = null,
-                                alpha = if (legal) 1f else 0.4f,
-                                modifier = Modifier.size(26.dp),
-                            )
-                        }
-                        Spacer(Modifier.size(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    item.display,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = if (legal) SheetInk else SheetDim,
-                                )
-                                if (!legal) {
-                                    Spacer(Modifier.size(6.dp))
-                                    Text("🚫", style = MaterialTheme.typography.labelSmall)
-                                }
-                            }
-                            effect?.takeIf { it.isNotBlank() }?.let {
-                                Text(
-                                    it,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = SheetDim,
-                                    maxLines = 2,
-                                    modifier = Modifier.alpha(if (legal) 1f else 0.6f),
-                                )
-                            }
-                        }
-                        Spacer(Modifier.size(8.dp))
-                        Text(item.category.label, style = MaterialTheme.typography.labelSmall, color = SheetDim)
-                    }
+                ItemRow(
+                    item = item,
+                    heldBy = heldElsewhere[item.slug],
+                    effect = itemInfo[item.slug]?.shortEffect?.takeIf { it.isNotBlank() } ?: item.blurb,
+                    onClick = { onPick(item.slug); onDismiss() },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ItemRow(item: HeldItem, heldBy: String?, effect: String?, onClick: () -> Unit) {
+    val legal = item.championsLegal
+    // Item Clause: no two Pokémon on the same team hold the same item.
+    val available = legal && heldBy == null
+    val alpha = if (available) 1f else 0.4f
+    Surface(onClick = { if (available) onClick() }, color = Color.Transparent) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            item.spriteUrl.let { spriteUrl ->
+                if (spriteUrl == null) {
+                    Text(
+                        heldItemFallbackGlyph(item.slug),
+                        modifier = Modifier.size(26.dp).alpha(alpha),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                } else {
+                    AsyncImage(model = spriteUrl, contentDescription = null, alpha = alpha, modifier = Modifier.size(26.dp))
                 }
             }
+            Spacer(Modifier.size(12.dp))
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(item.display, style = MaterialTheme.typography.bodyLarge, color = if (available) SheetInk else SheetDim)
+                    if (!legal) {
+                        Spacer(Modifier.size(6.dp))
+                        Text("🚫", style = MaterialTheme.typography.labelSmall)
+                    }
+                    if (heldBy != null) {
+                        Spacer(Modifier.size(6.dp))
+                        Text("· $heldBy", style = MaterialTheme.typography.labelSmall, color = SheetDim)
+                    }
+                }
+                effect?.takeIf { it.isNotBlank() }?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SheetDim,
+                        maxLines = 2,
+                        modifier = Modifier.alpha(if (available) 1f else 0.6f),
+                    )
+                }
+            }
+            Spacer(Modifier.size(8.dp))
+            Text(item.category.label, style = MaterialTheme.typography.labelSmall, color = SheetDim)
         }
     }
 }

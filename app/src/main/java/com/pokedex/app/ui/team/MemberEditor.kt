@@ -102,6 +102,7 @@ internal fun MemberEditor(
     abilityInfo: Map<String, String>,
     forms: List<MemberForm>,
     selectedForm: Int,
+    otherMembers: List<TeamMember>,
     onSelectForm: (Int) -> Unit,
     onBack: () -> Unit,
     onHome: () -> Unit,
@@ -168,6 +169,7 @@ internal fun MemberEditor(
         "item" -> ItemPickerSheet(
             species = member.speciesName,
             itemInfo = itemInfo,
+            heldElsewhere = otherMembers.mapNotNull { m -> m.item?.let { it to m.displayName } }.toMap(),
             onNeedInfo = { viewModel.loadItemInfo(it) },
             onDismiss = { sheet = null },
             onPick = { viewModel.setItem(slot, it) },

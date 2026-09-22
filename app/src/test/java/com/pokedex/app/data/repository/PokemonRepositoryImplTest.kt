@@ -5,7 +5,10 @@ import com.pokedex.app.data.local.MetaDao
 import com.pokedex.app.data.local.PokemonIndexDao
 import com.pokedex.app.data.local.PokemonIndexEntity
 import com.pokedex.app.data.local.RawCacheDao
+import com.pokedex.app.data.local.RawCacheEntity
 import com.pokedex.app.data.remote.PokeApiService
+import com.pokedex.app.data.remote.dto.AbilityDto
+import com.pokedex.app.data.remote.dto.AbilityPokemonDto
 import com.pokedex.app.data.remote.dto.MoveDto
 import com.pokedex.app.data.remote.dto.MoveSlotDto
 import com.pokedex.app.data.remote.dto.MoveVersionGroupDetailDto
@@ -124,6 +127,131 @@ class PokemonRepositoryImplTest {
         val ids = repo().pokemonIdsOfMove("magical-leaf").getOrThrow()
 
         assertThat(ids).containsExactly(1)
+    }
+
+    private val indeedeeSpecies = NamedApiResourceDto("indeedee", "https://pokeapi.co/api/v2/pokemon-species/876/")
+    private val meowsticSpecies = NamedApiResourceDto("meowstic", "https://pokeapi.co/api/v2/pokemon-species/678/")
+
+    @Test
+    fun `move search finds Indeedee for a female-only move PokeAPI lists only under the female variety`() = runTest {
+        // PokeAPI's own reverse index lists only indeedee-female (id 10186, not the male's 876) as
+        // a Follow Me learner. 10186 is outside 1..10000 — the range every other alternate-variety
+        // id is excluded from to avoid duplicate Mega/regional results — so reaching it at all needs
+        // GENDER_SPLIT_VARIETY_IDS; once fetched, its own movePool falls back to the curated table.
+        coEvery { service.getMove("follow-me") } returns MoveDto(
+            name = "follow-me",
+            learnedByPokemon = listOf(NamedApiResourceDto("indeedee-female", "https://pokeapi.co/api/v2/pokemon/10186/")),
+        )
+        coEvery { service.getPokemon("10186") } returns PokemonDto(id = 10186, name = "indeedee-female", species = indeedeeSpecies)
+
+        val ids = repo().pokemonIdsOfMove("follow-me").getOrThrow()
+
+        // 876, Indeedee's species id — not 10186, the female variety's own id.
+        assertThat(ids).containsExactly(876)
+    }
+
+    @Test
+    fun `move search finds Indeedee for a male-only move even when PokeAPI lists both genders`() = runTest {
+        coEvery { service.getMove("gravity") } returns MoveDto(
+            name = "gravity",
+            learnedByPokemon = listOf(
+                NamedApiResourceDto("indeedee-male", "https://pokeapi.co/api/v2/pokemon/876/"),
+                NamedApiResourceDto("indeedee-female", "https://pokeapi.co/api/v2/pokemon/10186/"),
+            ),
+        )
+        // Both are reached: 876 is in the ordinary 1..10000 range, 10186 via GENDER_SPLIT_VARIETY_IDS.
+        // Neither has train data, so both fall back to the curated table — only the male's includes
+        // gravity — and both resolve to the same species id, so the result isn't doubled up either.
+        coEvery { service.getPokemon("876") } returns PokemonDto(id = 876, name = "indeedee-male", species = indeedeeSpecies)
+        coEvery { service.getPokemon("10186") } returns PokemonDto(id = 10186, name = "indeedee-female", species = indeedeeSpecies)
+
+        val ids = repo().pokemonIdsOfMove("gravity").getOrThrow()
+
+        assertThat(ids).containsExactly(876)
+    }
+
+    @Test
+    fun `move search finds Meowstic for a female-only move, from PokeApi's own data with no curated table`() = runTest {
+        // Unlike Indeedee, PokéAPI's per-variety move lists for Meowstic are already correctly
+        // split by gender — extrasensory only shows up under meowstic-female — so once
+        // GENDER_SPLIT_VARIETY_IDS lets 10025 through, the ordinary blended-fallback movePool
+        // (no CHAMPIONS_MOVE_POOLS entry for Meowstic) already gets this right.
+        coEvery { service.getMove("extrasensory") } returns MoveDto(
+            name = "extrasensory",
+            learnedByPokemon = listOf(NamedApiResourceDto("meowstic-female", "https://pokeapi.co/api/v2/pokemon/10025/")),
+        )
+        coEvery { service.getPokemon("10025") } returns PokemonDto(
+            id = 10025,
+            name = "meowstic-female",
+            species = meowsticSpecies,
+            moves = listOf(MoveSlotDto(NamedApiResourceDto("extrasensory"))),
+        )
+
+        val ids = repo().pokemonIdsOfMove("extrasensory").getOrThrow()
+
+        assertThat(ids).containsExactly(678)
+    }
+
+    @Test
+    fun `move search does not add a species absent from Champions move pools`() = runTest {
+        coEvery { service.getMove("tackle") } returns MoveDto(name = "tackle", learnedByPokemon = emptyList())
+
+        val ids = repo().pokemonIdsOfMove("tackle").getOrThrow()
+
+        assertThat(ids).isEmpty()
+    }
+
+    @Test
+    fun `pokemonIdsOfAbility returns every species PokeApi lists directly, no fetch needed`() = runTest {
+        coEvery { service.getAbility("intimidate") } returns AbilityDto(
+            name = "intimidate",
+            pokemon = listOf(
+                AbilityPokemonDto(NamedApiResourceDto("gyarados", "https://pokeapi.co/api/v2/pokemon/130/")),
+                AbilityPokemonDto(NamedApiResourceDto("arcanine", "https://pokeapi.co/api/v2/pokemon/59/")),
+            ),
+        )
+
+        val ids = repo().pokemonIdsOfAbility("intimidate").getOrThrow()
+
+        assertThat(ids).containsExactly(130, 59)
+        coVerify(exactly = 0) { service.getPokemon(any()) } // no alternate varieties here, so no fetch needed
+    }
+
+    @Test
+    fun `ability search resolves an alternate variety to its species id, not drops it`() = runTest {
+        // Alolan Ninetales has Snow Warning but Kantonian Ninetales doesn't — PokeApi's ability
+        // index lists only the id>10000 alternate-variety id, never the base species id, so
+        // dropping ids outside 1..10000 (as pokemonIdsOfType does) would silently lose this result.
+        coEvery { service.getAbility("snow-warning") } returns AbilityDto(
+            name = "snow-warning",
+            pokemon = listOf(
+                AbilityPokemonDto(NamedApiResourceDto("ninetales-alola", "https://pokeapi.co/api/v2/pokemon/10104/")),
+            ),
+        )
+        coEvery { service.getPokemon("10104") } returns PokemonDto(
+            id = 10104,
+            name = "ninetales-alola",
+            species = NamedApiResourceDto("ninetales", "https://pokeapi.co/api/v2/pokemon-species/38/"),
+        )
+
+        assertThat(repo().pokemonIdsOfAbility("snow-warning").getOrThrow()).containsExactly(38)
+    }
+
+    @Test
+    fun `a cached ability body from before search existed is refetched, not read as zero matches`() = runTest {
+        // A body cached under the old (unversioned) key predates the `pokemon` field entirely —
+        // decoding it would silently default `pokemon` to empty and report no matches forever.
+        coEvery { cacheDao.get("ability/intimidate") } returns RawCacheEntity(
+            "ability/intimidate", """{"name":"intimidate"}""", System.currentTimeMillis(),
+        )
+        coEvery { service.getAbility("intimidate") } returns AbilityDto(
+            name = "intimidate",
+            pokemon = listOf(AbilityPokemonDto(NamedApiResourceDto("gyarados", "https://pokeapi.co/api/v2/pokemon/130/"))),
+        )
+
+        val ids = repo().pokemonIdsOfAbility("intimidate").getOrThrow()
+
+        assertThat(ids).containsExactly(130)
     }
 
     @Test

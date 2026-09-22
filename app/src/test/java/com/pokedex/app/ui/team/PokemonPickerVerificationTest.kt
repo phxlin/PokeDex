@@ -75,4 +75,90 @@ class PokemonPickerVerificationTest {
             Dispatchers.resetMain()
         }
     }
+
+    @Test
+    fun `switching to name mode clears loading after cancelling an ability search`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val repository = mockk<PokemonRepository>()
+        every { repository.observePokemonIndex() } returns emptyFlow()
+        coEvery { repository.pokemonIdsOfAbility(any()) } coAnswers { awaitCancellation() }
+        val vm = PokemonPickerViewModel(repository)
+        try {
+            vm.setSearchMode(PickerSearchMode.ABILITY)
+            vm.onSearchTextChange("intimidate")
+            runCurrent()
+            advanceTimeBy(401.milliseconds)
+            runCurrent()
+            assertThat(vm.isFilteringByAbility.value).isTrue()
+
+            vm.setSearchMode(PickerSearchMode.NAME)
+            runCurrent()
+            advanceTimeBy(401.milliseconds)
+            runCurrent()
+
+            assertThat(vm.isFilteringByAbility.value).isFalse()
+        } finally {
+            vm.viewModelScope.cancel()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `switching to name mode clears a failed ability search error`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val repository = mockk<PokemonRepository>()
+        every { repository.observePokemonIndex() } returns emptyFlow()
+        coEvery { repository.pokemonIdsOfAbility(any()) } returns Result.failure(java.io.IOException("offline"))
+        val vm = PokemonPickerViewModel(repository)
+        try {
+            vm.setSearchMode(PickerSearchMode.ABILITY)
+            vm.onSearchTextChange("intimidate")
+            runCurrent()
+            advanceTimeBy(401.milliseconds)
+            runCurrent()
+            assertThat(vm.hasAbilityError.value).isTrue()
+
+            vm.setSearchMode(PickerSearchMode.NAME)
+            runCurrent()
+            advanceTimeBy(401.milliseconds)
+            runCurrent()
+
+            assertThat(vm.hasAbilityError.value).isFalse()
+        } finally {
+            vm.viewModelScope.cancel()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun `move and ability searches carry independent loading state`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val repository = mockk<PokemonRepository>()
+        every { repository.observePokemonIndex() } returns emptyFlow()
+        coEvery { repository.pokemonIdsOfMove("surf") } returns Result.success(setOf(1))
+        coEvery { repository.pokemonIdsOfAbility("intimidate") } returns Result.success(setOf(130))
+        val vm = PokemonPickerViewModel(repository)
+        try {
+            vm.setSearchMode(PickerSearchMode.MOVE)
+            vm.onSearchTextChange("surf")
+            runCurrent()
+            advanceTimeBy(401.milliseconds)
+            runCurrent()
+            assertThat(vm.isFilteringByMove.value).isFalse()
+            assertThat(vm.isFilteringByAbility.value).isFalse()
+
+            vm.setSearchMode(PickerSearchMode.ABILITY)
+            vm.onSearchTextChange("intimidate")
+            runCurrent()
+            advanceTimeBy(401.milliseconds)
+            runCurrent()
+
+            // Resolving the ability search must not touch the (already-resolved) move flag.
+            assertThat(vm.isFilteringByAbility.value).isFalse()
+            assertThat(vm.isFilteringByMove.value).isFalse()
+        } finally {
+            vm.viewModelScope.cancel()
+            Dispatchers.resetMain()
+        }
+    }
 }

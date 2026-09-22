@@ -18,6 +18,7 @@ import com.pokedex.app.data.remote.dto.PokemonDto
 import com.pokedex.app.data.remote.dto.SpeciesDto
 import com.pokedex.app.data.remote.dto.TypeDto
 import com.pokedex.app.core.PokemonForms
+import com.pokedex.app.data.GENDER_SPLIT_VARIETY_IDS
 import com.pokedex.app.data.speciesPatchedFor
 import com.pokedex.app.data.toDomain
 import com.pokedex.app.domain.model.AbilityDetail
@@ -252,15 +253,7 @@ class PokemonRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getAbility(name: String): Result<AbilityDetail> = withContext(io) {
-        runCatching {
-            val key = "ability/${name.lowercase()}"
-            val cached = cacheDao.get(key)?.body
-                ?.let { runCatching { json.decodeFromString(AbilityDto.serializer(), it) }.getOrNull() }
-            val dto = cached ?: service.getAbility(name.lowercase()).also {
-                cacheDao.put(RawCacheEntity(key, json.encodeToString(AbilityDto.serializer(), it), now()))
-            }
-            dto.toDomain()
-        }.mapCatchingCancellation()
+        runCatching { fetchAbilityCached(name.lowercase().trim()).toDomain() }.mapCatchingCancellation()
     }
 
     override suspend fun pokemonIdsOfType(type: String): Result<Set<Int>> = withContext(io) {
@@ -284,7 +277,13 @@ class PokemonRepositoryImpl @Inject constructor(
             val slug = move.lowercase().trim()
             val candidateIds = fetchMoveCached(slug).learnedByPokemon
                 .mapNotNull { it.idFromUrl() }
-                .filter { it in 1..10000 }
+                // A National Dex id (1..10000) is a species' default variety; anything above that
+                // is an alternate form — Mega, regional, Gigantamax — and would otherwise duplicate
+                // its own base species' result here. GENDER_SPLIT_VARIETY_IDS is let through as a
+                // deliberate, narrow exception: a gender-split species' non-default (female) variety
+                // is not a redundant alternate form the way a Mega is, it's the only place some of
+                // its moves show up at all (Follow Me lists only `indeedee-female`, never the male).
+                .filter { it in 1..10000 || it in GENDER_SPLIT_VARIETY_IDS }
                 .map { it.toString() }
             // A species can be missing from PokéAPI's reverse index for exactly the move a
             // MOVE_POOL_PATCHES entry exists to cover (Golisopod for u-turn/aqua-jet) — the
@@ -294,9 +293,11 @@ class PokemonRepositoryImpl @Inject constructor(
 
             // learned_by_pokemon has no per-entry learn-method breakdown, so it's only a
             // candidate list (any game, any method) — confirm each one Champions-legally
-            // via its own movePool (movePoolFor's train-preferred logic), the same check
-            // each Pokémon's own move picker already enforces. Bounded-concurrency fan-out:
-            // a popular move can have 200+ candidates and this is a one-shot search, not
+            // via its own movePool (movePoolFor's train-preferred logic, which for a
+            // GENDER_SPLIT_VARIETY_IDS candidate also covers the curated fallback in
+            // CHAMPIONS_MOVE_POOLS where PokéAPI's own per-variety data can't be trusted), the
+            // same check each Pokémon's own move picker already enforces. Bounded-concurrency
+            // fan-out: a popular move can have 200+ candidates and this is a one-shot search, not
             // something to run fully sequentially. A candidate fetch that fails (not just
             // resolves to "no match") is left to propagate rather than silently dropped —
             // otherwise a network hiccup would report success with an incomplete/empty set,
@@ -307,9 +308,39 @@ class PokemonRepositoryImpl @Inject constructor(
                     async { gate.withPermit { fetchPokemonCached(key) } }
                 }.awaitAll()
             }.filter { slug in it.toDomain().movePool }
-                .map { it.id }
+                // speciesId, not id: a GENDER_SPLIT_VARIETY_IDS candidate's own id is the >10000
+                // variety id, but its species field (shared with the default variety) resolves to
+                // the one Pokédex entry search results are actually about.
+                .map { it.toDomain().speciesId }
                 .toSet()
         }.mapCatchingCancellation()
+    }
+
+    override suspend fun pokemonIdsOfAbility(ability: String): Result<Set<Int>> = withContext(io) {
+        runCatching {
+            val ids = fetchAbilityCached(ability.lowercase().trim()).pokemon.mapNotNull { it.pokemon.idFromUrl() }
+            val (direct, alternate) = ids.partition { it in 1..10000 }
+            // A >10000 id here is a regional/Mega/Gigantamax variety — e.g. Alolan Ninetales has
+            // Snow Warning but Kantonian Ninetales doesn't, so unlike pokemonIdsOfType this can't
+            // just drop them: that variety may be the *only* holder of this ability. Resolve each
+            // one to its shared species id (the id the picker's index actually lists) instead, the
+            // same way pokemonIdsOfMove resolves a GENDER_SPLIT_VARIETY_IDS candidate — no legality
+            // check needed here, just the id mapping, so no Semaphore: these lists run a handful of
+            // alternate varieties per ability, nothing like a move's 200+ candidates.
+            val resolved = coroutineScope {
+                alternate.map { id -> async { fetchPokemonCached(id.toString()).toDomain().speciesId } }.awaitAll()
+            }
+            (direct + resolved).toSet()
+        }.mapCatchingCancellation()
+    }
+
+    private suspend fun fetchAbilityCached(slug: String): AbilityDto {
+        val key = abilityKey(slug)
+        return cacheDao.get(key)?.body
+            ?.let { runCatching { json.decodeFromString(AbilityDto.serializer(), it) }.getOrNull() }
+            ?: service.getAbility(slug).also {
+                cacheDao.put(RawCacheEntity(key, json.encodeToString(AbilityDto.serializer(), it), now()))
+            }
     }
 
     private suspend fun fetchMoveCached(slug: String): MoveDto {
@@ -326,6 +357,10 @@ class PokemonRepositoryImpl @Inject constructor(
     // moves, e.g. Upper Hand, Dire Claw, even though it has a perfectly good flavor-text
     // description, so that's the fallback getMoveInfo uses).
     private fun moveKey(slug: String) = "move/v4/$slug"
+
+    // v2: cache bumped when the pokemon reverse-index was added to AbilityDto for ability search —
+    // a v1 body would otherwise deserialize with an empty list and search would find nothing.
+    private fun abilityKey(slug: String) = "ability/v2/$slug"
 
     override suspend fun resolvePokemonId(rawName: String): Result<Int> = withContext(io) {
         runCatching {

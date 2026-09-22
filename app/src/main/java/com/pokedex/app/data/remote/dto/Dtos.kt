@@ -165,6 +165,13 @@ data class AbilityDto(
     val name: String = "",
     @SerialName("effect_entries") val effectEntries: List<VerboseEffectDto> = emptyList(),
     @SerialName("flavor_text_entries") val flavorTextEntries: List<AbilityFlavorTextDto> = emptyList(),
+    /** Every species (and alternate variety) that can have this ability — used by ability search. */
+    val pokemon: List<AbilityPokemonDto> = emptyList(),
+)
+
+@Serializable
+data class AbilityPokemonDto(
+    val pokemon: NamedApiResourceDto = NamedApiResourceDto(),
 )
 
 @Serializable

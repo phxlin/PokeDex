@@ -4,15 +4,13 @@
   <CurrentIssues>
     <ID>ComplexCondition:Mappers.kt$trigger?.name == "trade" &amp;&amp; item == null &amp;&amp; heldItem == null &amp;&amp; tradeSpecies == null</ID>
     <ID>CyclomaticComplexMethod:Mappers.kt$private fun EvolutionDetailDto.condition(): EvoCondition</ID>
-    <ID>CyclomaticComplexMethod:Pickers.kt$@Composable fun ItemPickerSheet( species: String?, itemInfo: Map&lt;String, com.pokedex.app.domain.team.ItemInfo&gt;, onNeedInfo: (List&lt;String&gt;) -&gt; Unit, onDismiss: () -&gt; Unit, onPick: (String?) -&gt; Unit, )</ID>
     <ID>CyclomaticComplexMethod:Pickers.kt$@Composable fun MovePickerSheet( pool: List&lt;String&gt;, moveInfo: Map&lt;String, MoveInfo&gt;, onDismiss: () -&gt; Unit, onPick: (String?) -&gt; Unit, )</ID>
     <ID>CyclomaticComplexMethod:TypeChip.kt$@DrawableRes private fun typeSymbolRes(type: String): Int?</ID>
     <ID>ForEachOnRange:StatHexagon.kt$0..5</ID>
     <ID>LongMethod:AnalysisCard.kt$@Composable internal fun AnalysisCard(state: TeamEditorUiState)</ID>
-    <ID>LongMethod:Pickers.kt$@Composable fun ItemPickerSheet( species: String?, itemInfo: Map&lt;String, com.pokedex.app.domain.team.ItemInfo&gt;, onNeedInfo: (List&lt;String&gt;) -&gt; Unit, onDismiss: () -&gt; Unit, onPick: (String?) -&gt; Unit, )</ID>
     <ID>LongMethod:Pickers.kt$@Composable fun MovePickerSheet( pool: List&lt;String&gt;, moveInfo: Map&lt;String, MoveInfo&gt;, onDismiss: () -&gt; Unit, onPick: (String?) -&gt; Unit, )</ID>
     <ID>LongMethod:TeamGrid.kt$@Composable private fun TeamGrid( state: TeamEditorUiState, onAddSlot: (Int) -&gt; Unit, onOpenSlot: (Int) -&gt; Unit, onSwapSlots: (Int, Int) -&gt; Unit, onTouchActiveChange: (Boolean) -&gt; Unit, )</ID>
-    <ID>LongParameterList:MemberEditor.kt$( member: TeamMember, moveInfo: Map&lt;String, MoveInfo&gt;, itemInfo: Map&lt;String, ItemInfo&gt;, abilityInfo: Map&lt;String, String&gt;, forms: List&lt;MemberForm&gt;, selectedForm: Int, onSelectForm: (Int) -&gt; Unit, onBack: () -&gt; Unit, onHome: () -&gt; Unit, onRemove: () -&gt; Unit, viewModel: TeamEditorViewModel, )</ID>
+    <ID>LongParameterList:MemberEditor.kt$( member: TeamMember, moveInfo: Map&lt;String, MoveInfo&gt;, itemInfo: Map&lt;String, ItemInfo&gt;, abilityInfo: Map&lt;String, String&gt;, forms: List&lt;MemberForm&gt;, selectedForm: Int, otherMembers: List&lt;TeamMember&gt;, onSelectForm: (Int) -&gt; Unit, onBack: () -&gt; Unit, onHome: () -&gt; Unit, onRemove: () -&gt; Unit, viewModel: TeamEditorViewModel, )</ID>
     <ID>LoopWithTooManyJumpStatements:PokemonRepositoryImpl.kt$PokemonRepositoryImpl$for</ID>
     <ID>MatchingDeclarationName:Destinations.kt$Routes</ID>
     <ID>MaxLineLength:AnalysisCard.kt$Text("Neutral to everything.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)</ID>
