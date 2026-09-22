@@ -49,7 +49,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -260,7 +259,7 @@ private fun MemberProfileFormPage(
             .padding(14.dp),
     ) {
         if (tabs != null) {
-            FormTabRow(tabs = tabs, selected = selectedTab, onSelect = onSelectTab, onColor = true)
+            FormTabRow(tabs = tabs, selected = selectedTab, onSelect = onSelectTab)
             Spacer(Modifier.height(10.dp))
         }
         Row(
@@ -399,7 +398,7 @@ private fun StatAlignmentSection(
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    "+${member.nature.raises!!.short}",
+                    "+${member.nature.raises.short}",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = DexStatUp,
@@ -620,9 +619,12 @@ private fun MoveSlotRow(index: Int, move: String?, info: MoveInfo?, highlighted:
     }
 }
 
-/** Horizontal, scrollable pill tabs for a member's forms (Base / Mega / regional…). */
+/**
+ * Horizontal, scrollable pill tabs for a member's forms (Base / Mega / regional…), styled for the
+ * profile card's colored header — its only caller.
+ */
 @Composable
-private fun FormTabRow(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit, onColor: Boolean = false) {
+private fun FormTabRow(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -631,18 +633,8 @@ private fun FormTabRow(tabs: List<String>, selected: Int, onSelect: (Int) -> Uni
     ) {
         tabs.forEachIndexed { index, label ->
             val isSelected = index == selected
-            val bg = when {
-                isSelected && onColor -> Color.White
-                isSelected -> MaterialTheme.colorScheme.primary
-                onColor -> Color.White.copy(alpha = 0.22f)
-                else -> CardWell
-            }
-            val fg = when {
-                isSelected && onColor -> CardInk
-                isSelected -> Color.White
-                onColor -> Color.White
-                else -> CardInk
-            }
+            val bg = if (isSelected) Color.White else Color.White.copy(alpha = 0.22f)
+            val fg = if (isSelected) CardInk else Color.White
             Surface(
                 onClick = { onSelect(index) },
                 color = bg,

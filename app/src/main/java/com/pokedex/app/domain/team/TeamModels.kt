@@ -146,20 +146,13 @@ data class TeamMember(
         val base = baseStats[stat] ?: return null
         return StatCalc.value(stat, base, sp[stat] ?: 0, nature)
     }
-
-    fun finalStats(): Map<StatKey, Int> =
-        StatKey.entries.associateWith { finalStat(it) ?: 0 }
 }
 
 data class Team(
     val id: Long = 0,
     val name: String,
     val members: List<TeamMember> = emptyList(),
-) {
-    val isFull: Boolean get() = members.size >= 6
-    fun memberAt(slot: Int): TeamMember? = members.firstOrNull { it.slot == slot }
-    fun hasSpecies(speciesId: Int): Boolean = members.any { it.speciesId == speciesId }
-}
+)
 
 /** Info about a single move, used for coverage analysis and the move picker. */
 data class MoveInfo(
